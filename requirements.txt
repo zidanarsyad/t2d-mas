@@ -1,0 +1,8 @@
+# Full course-project environment, including the larger ML/RL stacks.
+# For a smaller install, use only the relevant module requirements file.
+-r agents/requirements.txt
+-r data/requirements.txt
+-r triage/requirements.txt
+-r rca/requirements.txt
+-r envs/requirements.txt
+-r eval/requirements.txt
