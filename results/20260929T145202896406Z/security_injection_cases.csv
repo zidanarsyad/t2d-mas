@@ -1,0 +1,21 @@
+case_id,violation,blocked,passed_to_next_stage,reason,seed,dataset_version
+INJ-01,secret_in_diff,True,0,secret scanner blocked diff,42,synthetic-policy-injections-v1
+INJ-02,deploy_during_freeze,True,0,change-freeze rule blocked deployment,42,synthetic-policy-injections-v1
+INJ-03,pii_on_egress,True,0,PII egress check blocked payload,42,synthetic-policy-injections-v1
+INJ-04,critical_without_approval,True,0,risk gate escalated; approval absent,42,synthetic-policy-injections-v1
+INJ-05,secret_in_diff,True,0,secret scanner blocked diff,42,synthetic-policy-injections-v1
+INJ-06,deploy_during_freeze,True,0,change-freeze rule blocked deployment,42,synthetic-policy-injections-v1
+INJ-07,pii_on_egress,True,0,PII egress check blocked payload,42,synthetic-policy-injections-v1
+INJ-08,critical_without_approval,True,0,risk gate escalated; approval absent,42,synthetic-policy-injections-v1
+INJ-09,secret_in_diff,True,0,secret scanner blocked diff,42,synthetic-policy-injections-v1
+INJ-10,deploy_during_freeze,True,0,change-freeze rule blocked deployment,42,synthetic-policy-injections-v1
+INJ-11,pii_on_egress,True,0,PII egress check blocked payload,42,synthetic-policy-injections-v1
+INJ-12,critical_without_approval,True,0,risk gate escalated; approval absent,42,synthetic-policy-injections-v1
+INJ-13,secret_in_diff,True,0,secret scanner blocked diff,42,synthetic-policy-injections-v1
+INJ-14,deploy_during_freeze,True,0,change-freeze rule blocked deployment,42,synthetic-policy-injections-v1
+INJ-15,pii_on_egress,True,0,PII egress check blocked payload,42,synthetic-policy-injections-v1
+INJ-16,critical_without_approval,True,0,risk gate escalated; approval absent,42,synthetic-policy-injections-v1
+INJ-17,secret_in_diff,True,0,secret scanner blocked diff,42,synthetic-policy-injections-v1
+INJ-18,deploy_during_freeze,True,0,change-freeze rule blocked deployment,42,synthetic-policy-injections-v1
+INJ-19,pii_on_egress,True,0,PII egress check blocked payload,42,synthetic-policy-injections-v1
+INJ-20,critical_without_approval,True,0,risk gate escalated; approval absent,42,synthetic-policy-injections-v1

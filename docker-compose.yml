@@ -1,0 +1,110 @@
+services:
+  orchestrator:
+    build: .
+    command: ["uvicorn", "agents.app:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      DATABASE_URL: postgresql://t2d:t2d_demo@postgres:5432/t2d
+      REDIS_URL: redis://redis:6379/0
+      PRIVATE_KEY_DIR: /run/t2d/private
+      PUBLIC_KEY_DIR: /run/t2d/public
+      NODE_URLS: http://node-1:8000,http://node-2:8000,http://node-3:8000,http://node-4:8000,http://node-5:8000,http://node-6:8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - agent-private-keys:/run/t2d/private
+      - agent-public-keys:/run/t2d/public
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      node-1:
+        condition: service_healthy
+      node-2:
+        condition: service_healthy
+      node-3:
+        condition: service_healthy
+      node-4:
+        condition: service_healthy
+      node-5:
+        condition: service_healthy
+      node-6:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  node-1: &node
+    build: .
+    command: ["uvicorn", "agents.node_runtime:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      NODE_ID: node-1
+      PUBLIC_KEY_DIR: /run/t2d/public
+    volumes:
+      - agent-public-keys:/run/t2d/public:ro
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    mem_limit: 512m
+    cpus: 0.50
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 4s
+      timeout: 2s
+      retries: 30
+    restart: unless-stopped
+  node-2:
+    <<: *node
+    environment: { NODE_ID: node-2, PUBLIC_KEY_DIR: /run/t2d/public }
+  node-3:
+    <<: *node
+    environment: { NODE_ID: node-3, PUBLIC_KEY_DIR: /run/t2d/public }
+  node-4:
+    <<: *node
+    environment: { NODE_ID: node-4, PUBLIC_KEY_DIR: /run/t2d/public }
+  node-5:
+    <<: *node
+    environment: { NODE_ID: node-5, PUBLIC_KEY_DIR: /run/t2d/public }
+  node-6:
+    <<: *node
+    environment: { NODE_ID: node-6, PUBLIC_KEY_DIR: /run/t2d/public }
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 4s
+      timeout: 2s
+      retries: 15
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: t2d
+      POSTGRES_USER: t2d
+      POSTGRES_PASSWORD: t2d_demo
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./data/schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U t2d -d t2d"]
+      interval: 4s
+      timeout: 2s
+      retries: 20
+
+volumes:
+  agent-private-keys:
+  agent-public-keys:
+  redis-data:
+  postgres-data:

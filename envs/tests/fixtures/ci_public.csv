@@ -1,0 +1,5 @@
+cycle_id,test_id,duration,failed
+1,test-a,2.0,0
+1,test-b,4.0,1
+2,test-a,2.5,1
+2,test-b,3.5,0
