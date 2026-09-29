@@ -58,6 +58,15 @@ Requirements: Docker with the Compose plugin.
 docker compose up --build
 ```
 
+If host port 8000 is already in use, run Compose on another host port. For PowerShell:
+
+```powershell
+$env:ORCHESTRATOR_PORT = "8001"
+docker compose up --build
+```
+
+Then use `http://localhost:8001` for the orchestrator. The container continues listening on port 8000.
+
 The services expose:
 
 - Orchestrator API and OpenAPI UI: `http://localhost:8000` and `http://localhost:8000/docs`

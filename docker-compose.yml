@@ -9,7 +9,7 @@ services:
       PUBLIC_KEY_DIR: /run/t2d/public
       NODE_URLS: http://node-1:8000,http://node-2:8000,http://node-3:8000,http://node-4:8000,http://node-5:8000,http://node-6:8000
     ports:
-      - "8000:8000"
+      - "${ORCHESTRATOR_PORT:-8000}:8000"
     volumes:
       - agent-private-keys:/run/t2d/private
       - agent-public-keys:/run/t2d/public

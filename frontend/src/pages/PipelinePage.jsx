@@ -1,4 +1,4 @@
-import { Bot, Clock3, GitPullRequest, ShieldCheck } from "lucide-react";
+import { Bot, Clock3, GitPullRequest, ShieldCheck, Sparkles } from "lucide-react";
 import { stages } from "../data";
 import { Heading, Metric, Panel, SectionTitle, Severity } from "../components/Primitives";
 
