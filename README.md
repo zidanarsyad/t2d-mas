@@ -48,7 +48,7 @@ The system uses the autonomy rule `confidence >= tau AND risk <= risk_max`; othe
 | `frontend/` | React + Tailwind + Recharts dashboard with five screens and SSE updates |
 | `docker-compose.yml` | Orchestrator, six demo nodes, Redis, and PostgreSQL/pgvector |
 
-Each module has its own README and `requirements.txt`. Install only the modules you plan to run; the ML dependencies are intentionally separated.
+Each module has its own README and `requirements.txt`. The root `requirements.txt` installs the full course-project stack, including the larger ML/RL dependencies. To keep installation smaller, install only the requirements for the module you plan to run.
 
 ## Quick start: backend demo
 
@@ -87,14 +87,16 @@ Open the Vite URL shown in the terminal (usually `http://localhost:5173`). The d
 
 ## Python setup
 
-Python 3.11 is the project target. Create and activate a virtual environment, then install just the dependencies for the module you need:
+Python 3.11 is the project target. Create and activate a virtual environment. For the full project environment:
 
 ```sh
 python -m venv .venv
 # Windows PowerShell: .venv\Scripts\Activate.ps1
 # macOS/Linux: source .venv/bin/activate
-python -m pip install -r agents/requirements.txt
+python -m pip install -r requirements.txt
 ```
+
+The full install can take longer and use more disk space because it includes PyTorch, Transformers, FAISS, and reinforcement-learning packages. For only the backend demo, run `python -m pip install -r agents/requirements.txt` instead.
 
 Additional module dependencies:
 
