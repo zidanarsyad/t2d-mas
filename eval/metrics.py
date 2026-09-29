@@ -7,17 +7,22 @@ from collections.abc import Iterable, Sequence
 def recall_at_k(relevant: Iterable[str], ranked: Sequence[str], k: int) -> float:
     """Fraction of relevant items retrieved in the first k ranked results."""
     truth = set(relevant)
-    return 1.0 if not truth else len(truth.intersection(ranked[:k])) / len(truth)
+    return 0.0 if not truth else len(truth.intersection(ranked[:k])) / len(truth)
 
 
 def average_precision(relevant: Iterable[str], ranked: Sequence[str]) -> float:
     """Average precision for one ranked list; missing relevant items count as zero."""
     truth = set(relevant)
     if not truth:
-        return 1.0
+        return 0.0
     hits = 0
     total = 0.0
+    seen: set[str] = set()
     for rank, item in enumerate(ranked, start=1):
+        # Duplicate retrievals must not add extra hits or inflate average precision.
+        if item in seen:
+            continue
+        seen.add(item)
         if item in truth:
             hits += 1
             total += hits / rank
@@ -27,8 +32,10 @@ def average_precision(relevant: Iterable[str], ranked: Sequence[str]) -> float:
 def mean_average_precision(relevant_sets: Iterable[Iterable[str]],
                            ranked_lists: Iterable[Sequence[str]]) -> float:
     """Mean average precision over query-aligned relevance sets and rankings."""
-    values = [average_precision(relevant, ranked)
-              for relevant, ranked in zip(relevant_sets, ranked_lists, strict=True)]
+    pairs = [(set(relevant), ranked)
+             for relevant, ranked in zip(relevant_sets, ranked_lists, strict=True)]
+    # Queries without any labeled relevant document have undefined AP and are excluded.
+    values = [average_precision(relevant, ranked) for relevant, ranked in pairs if set(relevant)]
     return sum(values) / len(values) if values else 0.0
 
 

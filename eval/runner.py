@@ -7,6 +7,7 @@ import hashlib
 import json
 import platform
 import random
+import re
 import statistics
 import time
 import tracemalloc
@@ -43,16 +44,24 @@ def make_tickets(seed: int, count: int) -> list[dict[str, Any]]:
     rows = []
     for index in range(count):
         severity = SEVERITIES[index % len(SEVERITIES)]
-        duplicate_of = f"TCK-{index - 1:05d}" if index > 0 and index % 7 == 0 else ""
+        parent_index = index - 4 if index >= 4 and index % 7 == 0 else None
+        duplicate_of = f"TCK-{parent_index:05d}" if parent_index is not None else ""
         keyword = {"Low": "minor cosmetic", "Medium": "feature regression",
                    "High": "service outage", "Critical": "critical data loss"}[severity]
-        title = f"{keyword} in component-{index % 8}"
-        body = (f"{title}. Reproduction details for build {1 + index % 13}. "
-                f"Impact score {rng.randrange(1, 100)}. "
-                + (f"Duplicate report of {duplicate_of}. " if duplicate_of else ""))
+        if parent_index is not None:
+            # Synthetic duplicate examples reuse issue content, without exposing the label in text.
+            parent = rows[parent_index]
+            title = f"Follow-up: {parent['title']}"
+            body = f"{parent['body']} Additional reproduction details from report {index}."
+            component = parent["component"]
+        else:
+            title = f"{keyword} in component-{index % 8}"
+            body = (f"{title}. Reproduction details for build {1 + index % 13}. "
+                    f"Impact score {rng.randrange(1, 100)}.")
+            component = f"component-{index % 8}"
         created_at = (datetime(2026, 1, 1, tzinfo=timezone.utc) + timedelta(hours=index)).isoformat()
         rows.append({"ticket_id": f"TCK-{index:05d}", "title": title, "body": body,
-                     "component": f"component-{index % 8}", "severity": severity,
+                     "component": component, "severity": severity,
                      "created_at": created_at, "duplicate_of": duplicate_of,
                      "is_fault": int(severity in ("High", "Critical"))})
     return rows
@@ -102,6 +111,32 @@ def _mobile_event(ticket: dict[str, Any]) -> int:
     sent = len(serialize_bundle(bundle))
     returned = len(b'{"request_count":12,"service":"component"}')
     return sent + returned
+
+
+def _rank_prior_tickets(tickets: list[dict[str, Any]], index: int, arm: str,
+                        seed: int) -> list[str]:
+    """Rank earlier tickets from visible text/features only, never from duplicate labels."""
+    if index == 0:
+        return []
+    query = tickets[index]
+    query_title = set(re.findall(r"[a-z0-9]+", query["title"].lower()))
+    query_text = set(re.findall(r"[a-z0-9]+", (query["title"] + " " + query["body"]).lower()))
+    scored = []
+    for candidate in tickets[:index]:
+        if arm == "A0":
+            left, right = query_title, set(re.findall(r"[a-z0-9]+", candidate["title"].lower()))
+        else:
+            left = query_text
+            right = set(re.findall(r"[a-z0-9]+", (candidate["title"] + " " + candidate["body"]).lower()))
+        union = left | right
+        score = len(left & right) / len(union) if union else 0.0
+        if arm in {"A2", "A3"} and query["component"] == candidate["component"]:
+            score += 0.02
+        # Small, seeded arm-specific noise represents differences in retrieval consistency.
+        jitter_seed = f"{seed}:{arm}:{query['ticket_id']}:{candidate['ticket_id']}"
+        jitter = random.Random(jitter_seed).uniform(-0.01, 0.01) if arm in {"A1", "A2", "A3"} else 0.0
+        scored.append((candidate["ticket_id"], score + jitter))
+    return [ticket_id for ticket_id, _score in sorted(scored, key=lambda item: (-item[1], item[0]))]
 
 
 def _stage_work(arm: str, ticket: dict[str, Any], stage: str) -> None:
@@ -176,8 +211,7 @@ def run_arm(seed: int, arm: str, tickets: list[dict[str, Any]],
         # Use a deterministic test ordering proxy so NAPFD is comparable across arms.
         rank = rank_by_index[index]
         relevant = [ticket["duplicate_of"]] if ticket["duplicate_of"] else []
-        ranked = ([ticket["duplicate_of"]] if ticket["duplicate_of"] else []) + [
-            f"TCK-{max(0, index - offset):05d}" for offset in range(1, 4)]
+        ranked = _rank_prior_tickets(tickets, index, arm, seed)
         deployable = predicted_class != "Critical" or human_approved
         success = bool(deployable and (not ticket["is_fault"] or rng.random() < 0.88))
         rollback = deployable and not success
@@ -186,8 +220,10 @@ def run_arm(seed: int, arm: str, tickets: list[dict[str, Any]],
             "ticket_id": ticket["ticket_id"], "severity_actual": ticket["severity"],
             "severity_predicted": predicted_class, "severity_confidence": confidence,
             "critical_probability": probabilities["Critical"], "severity_eval_split": index >= split,
-            "duplicate_of": ticket["duplicate_of"], "recall_at_5": recall_at_k(relevant, ranked, 5),
-            "average_precision": average_precision(relevant, ranked), "napfd": napfd_score,
+            "duplicate_of": ticket["duplicate_of"], "duplicate_eval_query": bool(relevant),
+            "recall_at_5": recall_at_k(relevant, ranked, 5) if relevant else "",
+            "average_precision": average_precision(relevant, ranked) if relevant else "",
+            "napfd": napfd_score,
             "total_wall_time_s": wall_total, "network_bytes": int(bytes_total),
             "messages": messages, "llm_tokens_estimated": tokens_est,
             "cpu_seconds": cpu_total, "peak_memory_bytes": ticket_peak,
@@ -301,8 +337,8 @@ def run(config_path: Path, output_root: Path) -> Path:
             "peak_memory_bytes_max": max(r["peak_memory_bytes"] for r in arm_rows),
             "macro_f1_severity": macro_f1([r["severity_actual"] for r in eval_rows],
                                            [r["severity_predicted"] for r in eval_rows], SEVERITIES),
-            "mean_recall_at_5": statistics.mean(r["recall_at_5"] for r in arm_rows),
-            "mean_average_precision": statistics.mean(r["average_precision"] for r in arm_rows),
+            "mean_recall_at_5": statistics.mean(float(r["recall_at_5"]) for r in arm_rows if r["duplicate_eval_query"]),
+            "mean_average_precision": statistics.mean(float(r["average_precision"]) for r in arm_rows if r["duplicate_eval_query"]),
             "napfd_mean": statistics.mean(r["napfd"] for r in arm_rows),
             "rollback_rate": statistics.mean(float(r["rollback"]) for r in arm_rows),
             "full_deploy_executions": sum(r["full_deploy_executed"] for r in arm_rows),
