@@ -20,6 +20,6 @@ export default function PipelinePage({tickets,onNavigate}) {
     {!rows.length&&<div className="column-empty">No tickets in this stage</div>}
    </div></section>})}
   </div></div>
-  <div className="summary-grid"><Panel className="summary"><span className="summary-icon purple"><GitPullRequest size={17}/></span><div><small>CHANGE FLOW</small><b>7 changes in review</b><span>2 ready to merge after QA</span></div><a href="#approvals">Review queue ↗</a></Panel><Panel className="summary"><span className="summary-icon green"><Sparkles size={17}/></span><div><small>AGENT FLEET</small><b>11 agents · 3 mobile</b><span>All heartbeats received in the last 10s</span></div><a href="#agents">Fleet healthy <i className="online-dot"/></a></Panel></div>
+  <div className="summary-grid"><Panel className="summary"><span className="summary-icon purple"><GitPullRequest size={17}/></span><div><small>CHANGE FLOW</small><b>7 changes in review</b><span>2 ready to merge after QA</span></div><a href="#approvals" onClick={event=>{event.preventDefault();onNavigate("approvals")}}>Review queue ↗</a></Panel><Panel className="summary"><span className="summary-icon green"><Sparkles size={17}/></span><div><small>AGENT FLEET</small><b>11 agents · 3 mobile</b><span>All heartbeats received in the last 10s</span></div><a href="#agents" onClick={event=>{event.preventDefault();onNavigate("agents")}}>Fleet healthy <i className="online-dot"/></a></Panel></div>
  </div>;
 }
