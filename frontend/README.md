@@ -1,6 +1,6 @@
 # T2D-MAS dashboard
 
-A React + Tailwind + Recharts workspace for the course prototype. Nine views explain the ticket journey, agent conversations, interactive ticket runs, human reviews, decision trail, saved history, agent roles, sample performance, and measured experiment results.
+A React + Tailwind + Recharts workspace for the course prototype. Ten views include a project overview and explain the ticket journey, agent conversations, interactive ticket runs, human reviews, decision trail, saved history, agent roles, sample performance, and measured experiment results.
 
 ## Run locally
 

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from agents import app as api
 from agents.audit import MemoryAuditSink
 from agents.orchestrator import T2DOrchestrator
-from agents.severity_triage import classify_ticket
+from agents.severity_triage import classify_ticket, classify_ticket_with_llm
 from agents.synthetic_data import make_synthetic_tickets
 
 
@@ -124,3 +124,63 @@ def test_checkout_outage_is_classified_as_high_impact():
 
     assert result["severity"] == "High"
     assert "outage" in result["matched_cues"]
+
+
+def test_explicit_reviewer_severity_correction_applies_without_openrouter(monkeypatch):
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    result = asyncio.run(classify_ticket_with_llm(
+        "Seller payout issue with unclear impact",
+        review_feedback={"summary": "The reviewer knows sellers are affected.",
+                         "requested_changes": ["This should be Critical since it can affect sellers."]},
+    ))
+
+    assert result["severity"] == "Critical"
+    assert result["reviewer_override"] == "Critical"
+    assert result["provider"] == "rules_fallback"
+    assert result["fallback_reason"] == "OPENROUTER_API_KEY is unset"
+
+
+def test_openrouter_uses_qwen_first_and_ling_as_model_fallback(monkeypatch):
+    from agents import severity_triage
+
+    request_body = {}
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"model": "inclusionai/ling-3.0-flash-sante:free",
+                    "choices": [{"message": {"content":
+                        '{"severity":"High","category":"seller impact","rationale":"Seller transactions may fail."}'}}]}
+
+    class Client:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def post(self, _url, headers, json):
+            request_body.update(json)
+            assert headers["Authorization"] == "Bearer test-key"
+            return Response()
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("OPENROUTER_MODEL", "qwen/qwen3.8-27b:free")
+    monkeypatch.setenv("OPENROUTER_FALLBACK_MODEL", "inclusionai/ling-3.0-flash-sante:free")
+    monkeypatch.setattr(severity_triage.httpx, "AsyncClient", Client)
+
+    result = asyncio.run(severity_triage.classify_ticket_with_llm("Seller payments are failing."))
+
+    assert request_body["models"] == [
+        "qwen/qwen3.8-27b:free", "inclusionai/ling-3.0-flash-sante:free",
+    ]
+    assert request_body["max_tokens"] == 512
+    assert "response_format" not in request_body
+    assert result["model"] == "inclusionai/ling-3.0-flash-sante:free"
+    assert result["preferred_model"] == "qwen/qwen3.8-27b:free"
+    assert result["fallback_used"] is True

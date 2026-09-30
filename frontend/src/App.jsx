@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { useWorkspace } from "./hooks/useWorkspace";
 import { statusLabel } from "./workflow";
+const OverviewPage = lazy(() => import("./pages/OverviewPage.jsx"));
 const PipelinePage = lazy(() => import("./pages/PipelinePage.jsx"));
 const AgentsPage = lazy(() => import("./pages/AgentsPage.jsx"));
 const TracePage = lazy(() => import("./pages/TracePage.jsx"));
@@ -30,6 +31,7 @@ const ExperimentsPage = lazy(() => import("./pages/ExperimentsPage.jsx"));
 const TicketTestPage = lazy(() => import("./pages/TicketTestPage.jsx"));
 const CommunicationsPage = lazy(() => import("./pages/CommunicationsPage.jsx"));
 const nav = [
+  { id: "overview", label: "Project overview", icon: Workflow },
   { id: "pipeline", label: "Ticket overview", icon: LayoutDashboard },
   {
     id: "communications",
@@ -53,7 +55,7 @@ const stored = (key, fallback) => {
 };
 function route() {
   const id = window.location.hash.slice(1);
-  return nav.some((item) => item.id === id) ? id : "communications";
+  return nav.some((item) => item.id === id) ? id : "overview";
 }
 function Dialog({ children, title, onClose }) {
   const ref = useRef(null);
@@ -298,6 +300,7 @@ export default function App() {
             }
           >
             {page === "communications" && <CommunicationsPage {...common} />}
+            {page === "overview" && <OverviewPage onNavigate={go} />}
             {page === "pipeline" && (
               <PipelinePage
                 {...common}

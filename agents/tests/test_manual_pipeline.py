@@ -133,17 +133,18 @@ def test_request_changes_revises_triage_and_appends_interpretation_to_audit(monk
 
     async def classifier(_text, review_feedback=None):
         severity = "High" if review_feedback else "Medium"
-        return {"severity": severity, "confidence": 0.65, "matched_cues": ["outage"],
-                "rationale": "Reviewer correction considered." if review_feedback else "Initial classification.",
-                "agent": "Broker-Triage (OpenRouter)" if review_feedback else "rule-based triage",
-                "provider": "openrouter" if review_feedback else "rules",
-                "model": "qwen/qwen3.8-27b:free" if review_feedback else None}
-
-    async def interpreter(_note, _stage):
-        return {"summary": "Treat this as a high-impact outage.",
+        result = {"severity": severity, "confidence": 0.65, "matched_cues": ["outage"],
+                  "rationale": "Reviewer correction considered." if review_feedback else "Initial classification.",
+                  "agent": "Broker-Triage (OpenRouter)" if review_feedback else "rule-based triage",
+                  "provider": "openrouter" if review_feedback else "rules",
+                  "model": "qwen/qwen3.8-27b:free" if review_feedback else None}
+        if review_feedback:
+            result["review_interpretation"] = {
+                "summary": "Treat this as a high-impact outage.",
                 "requested_changes": ["Reclassify severity as High"], "constraints": [],
                 "evidence": ["All customers are affected"], "needs_clarification": False,
                 "interpreter": "openrouter", "model": "qwen/qwen3.8-27b:free"}
+        return result
 
     async def no_event(_event):
         return None
@@ -155,7 +156,6 @@ def test_request_changes_revises_triage_and_appends_interpretation_to_audit(monk
     monkeypatch.setattr(api, "_save_ticket_record", lambda *_args: None)
     monkeypatch.setattr(api, "_update_ticket_severity", lambda *_args: None)
     monkeypatch.setattr(api, "classify_ticket_with_llm", classifier)
-    monkeypatch.setattr(api, "interpret_review_feedback", interpreter)
     monkeypatch.setattr(api.event_hub, "publish", no_event)
 
     async def run():

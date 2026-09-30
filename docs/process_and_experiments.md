@@ -53,7 +53,7 @@ The `triage/` package has four pieces:
 - **Severity:** the baseline is TF-IDF plus `LinearSVC`, calibrated with Platt sigmoid calibration. An optional DistilBERT fine-tuning path uses Hugging Face Trainer and returns softmax probabilities.
 - **Gate:** predicted class confidence and risk are combined using the autonomy rule above. The decision contains the selected class, confidence, risk, thresholds, and whether to proceed or escalate.
 
-The separate `triage/` package does not require API keys. Interactive Broker-Triage uses local rules by default, with optional OpenRouter proposals when a key is configured. Those proposals remain below the autonomy confidence threshold and require review. See [`triage/README.md`](triage/README.md) for local model cache and optional download behavior.
+The separate `triage/` package does not require API keys. Interactive Broker-Triage uses local rules by default, with optional OpenRouter proposals when a key is configured. Those proposals remain below the autonomy confidence threshold and require review. See [`triage/README.md`](../triage/README.md) for local model cache and optional download behavior.
 
 ### 2.3 Agent roles and collaboration
 
@@ -140,7 +140,7 @@ Training reserves the first 80% of cycles for learning and the last 20% for eval
 
 ### 3.5 Four-arm harness
 
-The `eval/` harness is the main comparative experiment. Default configuration is in [`eval/config.json`](eval/config.json): only seed `42`, 100 tickets per arm, `tau=0.70`, and `risk_max=0.60`. Seed 42 creates one ticket set; every arm receives exactly those same records.
+The `eval/` harness is the main comparative experiment. Default configuration is in [`eval/config.json`](../eval/config.json): only seed `42`, 100 tickets per arm, `tau=0.70`, and `risk_max=0.60`. Seed 42 creates one ticket set; every arm receives exactly those same records.
 
 The four arms are:
 
@@ -191,11 +191,11 @@ When GNU Make is unavailable, use the same runner directly:
 python -m eval.runner --config eval/config.json --output-root results
 ```
 
-The command writes a new `results/<UTC timestamp>/` directory with a config snapshot, environment metadata, per-ticket and per-stage CSVs, security-injection detail and summary, descriptive summaries, BAB 9.4 Markdown, severity ROC data, and three charts. To train/evaluate the RL models, run the commands in [`envs/README.md`](envs/README.md). To start the multi-container demo, use `docker compose up --build` and follow [`agents/README.md`](agents/README.md).
+The command writes a new `results/<UTC timestamp>/` directory with a config snapshot, environment metadata, per-ticket and per-stage CSVs, security-injection detail and summary, descriptive summaries, BAB 9.4 Markdown, severity ROC data, and three charts. To train/evaluate the RL models, run the commands in [`envs/README.md`](../envs/README.md). To start the multi-container demo, use `docker compose up --build` and follow [`agents/README.md`](../agents/README.md).
 
 ## 4. Example harness output
 
-The checked-in sample run at [`results/20260930T020846305626/`](results/20260930T020846305626/) used dataset version `synthetic-eval-v1`, only seed 42, and 100 ticket rows per arm. Selected results:
+The checked-in sample run at [`results/20260930T020846305626/`](../results/20260930T020846305626/) used dataset version `synthetic-eval-v1`, only seed 42, and 100 ticket rows per arm. Selected results:
 
 | Arm | Mean network bytes/ticket | Messages/ticket | Recall@5 | MAP | Macro-F1 | Mean NAPFD | Rollback rate |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -206,7 +206,7 @@ The checked-in sample run at [`results/20260930T020846305626/`](results/20260930
 
 The injection summary recorded `20 blocked`, `0 passed`, meeting the synthetic target. All four arms reached macro-F1 of 1.0 because the generated severity text contains highly distinctive class phrases; this is a generator sanity check, not evidence of equivalent real-world classifier accuracy. A3 records more bytes than A2 because this harness includes a mobile bundle and aggregate return in addition to ACL messages. The wall-clock boxplot shows only tiny local workload timings and should not be interpreted as an operational latency comparison.
 
-See the complete [BAB 9.4 report](results/20260930T020846305626/BAB_9_4.md), [per-ticket data](results/20260930T020846305626/per_ticket.csv), [per-stage data](results/20260930T020846305626/per_stage.csv), and [security injection results](results/20260930T020846305626/security_injection_summary.csv).
+See the complete [BAB 9.4 report](../results/20260930T020846305626/BAB_9_4.md), [per-ticket data](../results/20260930T020846305626/per_ticket.csv), [per-stage data](../results/20260930T020846305626/per_stage.csv), and [security injection results](../results/20260930T020846305626/security_injection_summary.csv).
 
 ## 5. How to interpret and extend the results
 

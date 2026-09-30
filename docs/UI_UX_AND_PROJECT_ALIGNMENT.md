@@ -8,6 +8,7 @@ The original report's five monitoring screens remain represented. The additional
 
 | Screen | Stakeholder question | Data source |
 | --- | --- | --- |
+| Project overview | What is the project and where are the human checkpoints? | Illustrated guide, clearly labeled prototype scope |
 | Ticket overview | Where is the work, and what is blocked? | Current sandbox snapshots; counts derived from their statuses |
 | Agent conversations | Who shared what, and why was a worker selected? | Ticket-filtered Redis history + SSE, or an explicitly selected example |
 | Run a ticket | What will happen next, and what did each agent produce? | Current snapshot, shared outputs, and reviews |

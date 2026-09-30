@@ -29,7 +29,11 @@ export default function ReviewControls({ record, onRecord }) {
           ? latest.interpretation?.clarification_question ||
               "Please clarify the requested change."
           : intent === "request_changes"
-            ? "The agent revised its proposal. Inspect the result, then continue to review it again."
+            ? next.agent_outputs?.[latest?.stage]?.reviewer_override
+              ? `Applied the explicit ${next.agent_outputs[latest.stage].reviewer_override} severity correction locally. Continue to submit it for review.`
+              : next.agent_outputs?.[latest?.stage]?.fallback_reason
+                ? `The model service was unavailable (${next.agent_outputs[latest.stage].fallback_reason}). Inspect the local assessment before continuing.`
+                : "The agent revised its proposal. Inspect the result, then continue to review it again."
             : intent === "accept"
               ? "Decision saved. The ticket can continue."
               : "Decision saved. This run is stopped.",
