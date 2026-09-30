@@ -1,0 +1,8 @@
+{
+  "created_at_utc": "2026-09-30T02:08:46.305626Z",
+  "dataset_version": "synthetic-eval-v1",
+  "python": "3.12.10",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "randomness": "fixed seeds from config",
+  "measurement_note": "Seeded course-project simulation. Timings and resource measurements are observed on the current host; token use is an estimate, and no LLM or deployment service is called."
+}
