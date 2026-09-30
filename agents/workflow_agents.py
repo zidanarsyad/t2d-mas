@@ -31,7 +31,7 @@ HANDOFF_TARGETS = {
     "implementation": "Worker-QA",
     "qa": "Human-Reviewer",
     "deployment": "Human-Reviewer",
-    "monitoring": "Orchestrator",
+    "monitoring": "Broker-Triage",
 }
 
 

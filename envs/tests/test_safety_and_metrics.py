@@ -27,8 +27,8 @@ def test_napfd_reward_terms_are_reproducible() -> None:
 
 
 def test_synthetic_ci_generator_is_seeded() -> None:
-    first = generate_simulated_cycles(num_cycles=200, num_tests=8, seed=11)
-    second = generate_simulated_cycles(num_cycles=200, num_tests=8, seed=11)
+    first = generate_simulated_cycles(num_cycles=200, num_tests=8, seed=42)
+    second = generate_simulated_cycles(num_cycles=200, num_tests=8, seed=42)
     assert first.dataset_version == second.dataset_version
     assert len(first.cycles) == 200
     assert np.array_equal(first.cycles[5].observations, second.cycles[5].observations)
@@ -40,7 +40,7 @@ def test_environment_guard_blocks_full_without_approval_when_gymnasium_available
     from envs.canary_deploy import CanaryDeployEnv
 
     env = CanaryDeployEnv()
-    env.reset(seed=3)
+    env.reset(seed=42)
     _obs, _reward, _terminated, _truncated, info = env.step(3)
     assert info["requested_action"] == "full"
     assert info["executed_action"] == "hold"

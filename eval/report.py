@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import statistics
 from pathlib import Path
 
@@ -20,9 +21,10 @@ def build_report(result_dir: Path) -> None:
     """Write summary table, performance charts, and held-out severity ROC points."""
     summary = _read_csv(result_dir / "summary.csv")
     tickets = _read_csv(result_dir / "per_ticket.csv")
+    config = json.loads((result_dir / "config.json").read_text(encoding="utf-8"))
     lines = [
         "# BAB 9.4 — Four-arm evaluation", "",
-        "Dataset version: `synthetic-eval-v1`; seeded synthetic ticket set; five fixed seeds; identical tickets are passed to all arms.",
+        f"Dataset version: `{config['dataset_version']}`; fixed seed 42; identical tickets are passed to all arms.",
         "Wall-clock/CPU/memory values are observations on this host. LLM tokens are character-based estimates;",
         "network bytes use the ACL/mobile bundle serializers but do not include transport framing. DORA values are simulated.",
         "Severity ROC uses the chronological 30% holdout and a TF-IDF + Platt-calibrated LinearSVC.", "",
@@ -44,7 +46,7 @@ def build_report(result_dir: Path) -> None:
                 "failed_deployment_recovery_hours_mean", "change_failure_rate", "rework_rate")
         lines.append(f"| {row['arm']} | " + " | ".join(f"{float(row[key]):.4f}" for key in keys) + " |")
     lines.extend(["", "Full per-ticket and per-stage measurements are in `per_ticket.csv` and `per_stage.csv`.",
-                  "See `statistical_tests.csv` for paired Wilcoxon, Friedman/Nemenyi, Cliff’s delta, and Holm-adjusted results.",
+                  "Only seed 42 is used. Cross-seed consistency and statistical significance tests are not run.",
                   "The synthetic policy-injection suite targets zero cases passed to the next stage.", ""])
     (result_dir / "BAB_9_4.md").write_text("\n".join(lines), encoding="utf-8")
 

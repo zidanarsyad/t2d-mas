@@ -1,25 +1,171 @@
-import { Bot, Clock3, GitPullRequest, ShieldCheck, Sparkles } from "lucide-react";
-import { stages } from "../data";
-import { Heading, Metric, Panel, SectionTitle, Severity } from "../components/Primitives";
-
-export default function PipelinePage({tickets,onNavigate}) {
- const metrics=[
-  ["Active tickets","24","12%","vs last month",Bot,true],
-  ["Median lead time","3h 42m","18%","target ≤ 6h",Clock3,true],
-  ["Awaiting approval","03","1 critical","oldest 2h 04m",ShieldCheck,false],
-  ["Deploy success","96.4%","2.1%","last 30 days",GitPullRequest,true],
- ];
- return <div className="page-wrap">
-  <Heading eyebrow="Delivery control room · Tuesday, Sep 29" title="Pipeline overview" subtitle="A live view of ticket-to-deployment flow across agents and human gates." action={<button className="button primary" onClick={()=>onNavigate("approvals")}><ShieldCheck size={15}/>Review approvals</button>}/>
-  <div className="metric-grid metric-4">{metrics.map(([label,value,change,note,Icon,good])=><Metric key={label} {...{label,value,change,note,icon:Icon,good}}/>)}</div>
-  <div className="guardrail-banner"><span><ShieldCheck size={18}/></span><div><b>Policy gates are active</b><small>Critical severity, main merges, and production releases remain paused for human review.</small></div><strong>3 approvals waiting&nbsp; →</strong></div>
-  <div className="board-head"><SectionTitle title="Ticket flow" detail="9 pipeline stages · horizontal scroll to inspect all columns"/><span className="board-live"><i/> Updated just now</span></div>
-  <div className="kanban-scroll" tabIndex="0" role="region" aria-label="Nine-stage ticket pipeline"><div className="kanban-board">
-   {stages.map((stage,index)=>{const rows=tickets.filter(t=>t.stage===stage);return <section className="kanban-column" key={stage} aria-label={`${stage}: ${rows.length} tickets`}><header><span className="stage-index">{String(index+1).padStart(2,"0")}</span><h3>{stage}</h3><b>{String(rows.length).padStart(2,"0")}</b></header><div className="column-divider"/><div className="ticket-list">
-    {rows.map(ticket=><article className={`ticket ${ticket.waiting?"is-waiting":""}`} key={ticket.id}><div className="ticket-line"><small>{ticket.id}</small><Severity value={ticket.severity}/></div><h4>{ticket.title}</h4><span className="ticket-component">{ticket.component}</span><div className="ticket-meta"><span><Bot size={12}/>{ticket.agent}</span><span><Clock3 size={12}/>{ticket.age}</span></div>{ticket.waiting&&<div className="waiting"><ShieldCheck size={12}/>Waiting for human</div>}</article>)}
-    {!rows.length&&<div className="column-empty">No tickets in this stage</div>}
-   </div></section>})}
-  </div></div>
-  <div className="summary-grid"><Panel className="summary"><span className="summary-icon purple"><GitPullRequest size={17}/></span><div><small>CHANGE FLOW</small><b>7 changes in review</b><span>2 ready to merge after QA</span></div><a href="#approvals" onClick={event=>{event.preventDefault();onNavigate("approvals")}}>Review queue ↗</a></Panel><Panel className="summary"><span className="summary-icon green"><Sparkles size={17}/></span><div><small>AGENT FLEET</small><b>11 agents · 3 mobile</b><span>All heartbeats received in the last 10s</span></div><a href="#agents" onClick={event=>{event.preventDefault();onNavigate("agents")}}>Fleet healthy <i className="online-dot"/></a></Panel></div>
- </div>;
+import {
+  ArrowRight,
+  CheckCircle2,
+  MessageSquareText,
+  Plus,
+  RefreshCw,
+  ShieldCheck,
+} from "lucide-react";
+import {
+  Heading,
+  Panel,
+  SectionTitle,
+  Severity,
+} from "../components/Primitives";
+import { statusLabel, workflow } from "../workflow";
+export default function PipelinePage({
+  records,
+  onNavigate,
+  loading,
+  error,
+  onRefresh,
+}) {
+  const waiting = records.filter(
+      (item) => item.status === "waiting_for_review",
+    ),
+    active = records.filter(
+      (item) => !["completed", "rejected"].includes(item.status),
+    );
+  return (
+    <div className="page-wrap">
+      <Heading
+        eyebrow="From issue to improvement"
+        title="Where is the work now?"
+        subtitle="Follow each ticket through nine specialist stages. Human decisions are visible at every review gate."
+        action={
+          <button
+            className="button primary"
+            onClick={() => onNavigate("test", "")}
+          >
+            <Plus size={17} />
+            Start a ticket
+          </button>
+        }
+      />
+      <div className="journey-metrics">
+        {[
+          [
+            "Tickets in progress",
+            active.length,
+            "Currently moving through the prototype",
+          ],
+          ["Human reviews", waiting.length, "Paused until a reviewer decides"],
+          [
+            "Completed runs",
+            records.filter((item) => item.status === "completed").length,
+            "All nine prototype stages visited",
+          ],
+        ].map(([label, value, note]) => (
+          <Panel key={label}>
+            <small>{label}</small>
+            <b>{loading || error ? "—" : value}</b>
+            <span>{note}</span>
+          </Panel>
+        ))}
+      </div>
+      <div className="workspace-banner">
+        <ShieldCheck size={21} />
+        <div>
+          <b>
+            {waiting.length
+              ? `${waiting.length} ${waiting.length === 1 ? "ticket needs" : "tickets need"} your decision`
+              : "Human review is part of the workflow"}
+          </b>
+          <p>
+            High-risk assessments, change reviews, and release proposals pause
+            for a person.
+          </p>
+        </div>
+        <button
+          className="button secondary"
+          onClick={() => onNavigate("approvals")}
+        >
+          Review inbox
+          <ArrowRight size={16} />
+        </button>
+      </div>
+      <SectionTitle
+        title="The ticket journey"
+        detail="Each agent shares a result with the next participant. Select a ticket to continue its run."
+      />
+      <div className="journey-board">
+        {workflow.map((stage, index) => {
+          const items = records.filter(
+            (item) => item.current_stage === stage.id,
+          );
+          return (
+            <Panel className="journey-column" key={stage.id}>
+              <header>
+                <span className="journey-number">{index + 1}</span>
+                <h3>{stage.label}</h3>
+                <small>{items.length}</small>
+              </header>
+              <p>{stage.description}</p>
+              <div className="journey-owner">{stage.agent}</div>
+              <div className="journey-tickets">
+                {items.map((item) => (
+                  <button
+                    key={item.ticket_id}
+                    className={`journey-ticket ${item.status === "waiting_for_review" ? "needs-review" : ""}`}
+                    onClick={() => onNavigate("test", item.ticket_id)}
+                  >
+                    <span>
+                      <small>{item.ticket_id}</small>
+                      <Severity value={item.severity} />
+                    </span>
+                    <b>{item.title}</b>
+                    <em>
+                      {item.status === "waiting_for_review" ? (
+                        <ShieldCheck size={14} />
+                      ) : item.status === "completed" ? (
+                        <CheckCircle2 size={14} />
+                      ) : (
+                        <ArrowRight size={14} />
+                      )}{" "}
+                      {statusLabel(item.status)}
+                    </em>
+                  </button>
+                ))}
+                {!items.length && (
+                  <span className="journey-empty">No tickets here</span>
+                )}
+              </div>
+            </Panel>
+          );
+        })}
+      </div>
+      {loading && <p role="status">Loading current ticket runs…</p>}
+      {error && (
+        <div className="workspace-banner error" role="alert">
+          <div>
+            <b>Ticket runs are unavailable</b>
+            <p>{error}</p>
+          </div>
+          <button className="button secondary" onClick={onRefresh}>
+            <RefreshCw size={16} />
+            Try again
+          </button>
+        </div>
+      )}
+      {!loading && !error && !records.length && (
+        <Panel className="welcome-panel">
+          <MessageSquareText size={28} />
+          <div>
+            <h2>See a ticket move through the agents</h2>
+            <p>
+              Start with the sample checkout incident or describe your own
+              issue. Watch the conversation and review the agents’ proposals.
+            </p>
+          </div>
+          <button
+            className="button primary"
+            onClick={() => onNavigate("test", "")}
+          >
+            Run your first ticket
+            <ArrowRight size={16} />
+          </button>
+        </Panel>
+      )}
+    </div>
+  );
 }

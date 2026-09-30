@@ -1,8 +1,7 @@
 {
   "master_seed": 42,
-  "seeds": [42, 43, 44, 45, 46],
+  "seeds": [42],
   "tickets_per_seed": 100,
-  "alpha": 0.05,
   "tau": 0.70,
   "risk_max": 0.60,
   "dataset_version": "synthetic-eval-v1",

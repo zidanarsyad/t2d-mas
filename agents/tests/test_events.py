@@ -15,3 +15,17 @@ def test_sse_event_hub_fans_out_and_cleans_up():
         assert not hub._subscribers
 
     asyncio.run(scenario())
+
+
+def test_heartbeat_keeps_subscription_alive_for_later_agent_events():
+    async def scenario():
+        hub = EventHub()
+        stream = hub.subscribe(heartbeat_seconds=0.01)
+        assert await anext(stream) is None
+        assert len(hub._subscribers) == 1
+        await hub.publish({"type": "approval.requested", "ticket_id": "T-2"})
+        assert await anext(stream) == {"type": "approval.requested", "ticket_id": "T-2"}
+        await stream.aclose()
+        assert not hub._subscribers
+
+    asyncio.run(scenario())

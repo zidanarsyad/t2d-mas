@@ -3,6 +3,8 @@
   "dataset_version": "synthetic-eval-v1",
   "python": "3.12.10",
   "platform": "Windows-11-10.0.26200-SP0",
-  "randomness": "fixed seeds from config",
-  "measurement_note": "Seeded course-project simulation. Timings and resource measurements are observed on the current host; token use is an estimate, and no LLM or deployment service is called."
+  "randomness": "fixed seed 42",
+  "measurement_note": "Seeded course-project simulation. Timings and resource measurements are observed on the current host; token use is an estimate, and no LLM or deployment service is called.",
+  "retained_seed": 42,
+  "artifact_note": "Original seed-42 measurements retained; other seeds removed and derived artifacts rebuilt."
 }

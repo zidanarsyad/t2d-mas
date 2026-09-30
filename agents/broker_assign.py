@@ -54,7 +54,7 @@ class ContractNetBroker:
             decision="cfp_authorized", correlation_id=correlation_id,
             ticket_id=correlation_id, details={"workers": workers, "deadline_s": deadline_s}))
         cfp = ACLMessage("cfp", correlation_id, task, {"tau": 0.70, "risk_max": 0.60},
-                         sender="broker-assign@orchestrator", receiver=workers)
+                         sender="Broker-Assign", receiver=workers)
         await self.bus.publish(cfp)
         bids: list[Proposal] = []
         pending = {asyncio.create_task(self.bidder(worker, task)) for worker in workers}
@@ -77,9 +77,9 @@ class ContractNetBroker:
                                                "rejected": [bid.worker_id for bid in rejects]}))
         await self.bus.publish(ACLMessage("accept-proposal", correlation_id,
             {"worker_id": winner.worker_id, "utility": winner.score},
-            sender="broker-assign@orchestrator", receiver=[winner.worker_id]))
+            sender="Broker-Assign", receiver=[winner.worker_id]))
         for proposal in rejects:
             await self.bus.publish(ACLMessage("reject-proposal", correlation_id,
                 {"worker_id": proposal.worker_id, "utility": proposal.score},
-                sender="broker-assign@orchestrator", receiver=[proposal.worker_id]))
+                sender="Broker-Assign", receiver=[proposal.worker_id]))
         return winner

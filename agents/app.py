@@ -11,6 +11,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any, Literal
 from uuid import uuid4
+from datetime import datetime, timezone
+from functools import wraps
 
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -329,6 +331,19 @@ def _manual_ticket_snapshot(ticket_id: str) -> dict[str, Any]:
     }
 
 
+def serialized_manual_ticket(handler):
+    """Keep each ticket's audit, messages, and state transitions in one order."""
+    @wraps(handler)
+    async def serialized(ticket_id: str, *args, **kwargs):
+        record = app.state.manual_ticket_records.get(ticket_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="Manual test ticket not found.")
+        lock = record.setdefault("_mutation_lock", asyncio.Lock())
+        async with lock:
+            return await handler(ticket_id, *args, **kwargs)
+    return serialized
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "orchestrator"}
@@ -542,13 +557,12 @@ def saved_ticket_history(limit: Annotated[int, Query(ge=1, le=50)] = 50) -> dict
 async def events() -> StreamingResponse:
     async def stream():
         yield "event: ready\ndata: {\"status\":\"connected\"}\n\n"
-        iterator = event_hub.subscribe()
+        iterator = event_hub.subscribe(heartbeat_seconds=20)
         try:
-            while True:
-                try:
-                    event = await asyncio.wait_for(anext(iterator), timeout=20)
+            async for event in iterator:
+                if event is not None:
                     yield f"event: update\ndata: {json.dumps(event, separators=(',', ':'))}\n\n"
-                except TimeoutError:
+                else:
                     yield ": keep-alive\n\n"
         finally:
             await iterator.aclose()
@@ -572,6 +586,8 @@ async def start_ticket(body: StartTicket) -> dict[str, Any]:
 
 @app.post("/sandbox/tickets")
 async def start_manual_ticket(body: ManualTicket) -> dict[str, Any]:
+    if len(body.title.strip()) < 3 or len(body.body.strip()) < 10:
+        raise HTTPException(status_code=422, detail="Add a ticket title and a description of the issue.")
     ticket_id = f"TEST-{uuid4().hex[:8].upper()}"
     normalized_title, normalized_body = mask_text(body.title.strip()), mask_text(body.body.strip())
     triage = await classify_ticket_with_llm(f"{normalized_title}\n{normalized_body}")
@@ -580,6 +596,7 @@ async def start_manual_ticket(body: ManualTicket) -> dict[str, Any]:
     app.state.pipeline.start(ticket_id)
     app.state.manual_ticket_records[ticket_id] = {
         "ticket_id": ticket_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
         "title": normalized_title,
         "body": normalized_body,
         "severity": triage["severity"],
@@ -611,9 +628,19 @@ def get_manual_ticket(ticket_id: str) -> dict[str, Any]:
     return _manual_ticket_snapshot(ticket_id)
 
 
+@app.get("/sandbox/tickets")
+def active_manual_tickets() -> dict[str, Any]:
+    """One shared source of truth for the board, review inbox, and run workspace."""
+    return {"items": [_manual_ticket_snapshot(ticket_id)
+                      for ticket_id in reversed(app.state.manual_ticket_records)]}
+
+
 @app.post("/sandbox/tickets/{ticket_id}/advance")
+@serialized_manual_ticket
 async def advance_manual_ticket(ticket_id: str) -> dict[str, Any]:
     snapshot = _manual_ticket_snapshot(ticket_id)
+    if snapshot["status"] == "waiting_for_review":
+        return snapshot
     if snapshot["status"] in {"rejected", "completed"}:
         raise HTTPException(status_code=409, detail=f"Ticket test is {snapshot['status']}.")
     try:
@@ -648,6 +675,7 @@ async def advance_manual_ticket(ticket_id: str) -> dict[str, Any]:
         run = app.state.pipeline.advance(ticket_id, decision=decision)
     except PipelinePaused:
         run = app.state.pipeline.runs[ticket_id]
+        record["review_requested_at"] = datetime.now(timezone.utc).isoformat()
         pending = run.approval_queue[-1] if run.approval_queue else None
         await event_hub.publish({"type": "approval.requested", "ticket_id": ticket_id,
                                  "checkpoint": pending["checkpoint"] if pending else run.waiting_for,
@@ -661,13 +689,18 @@ async def advance_manual_ticket(ticket_id: str) -> dict[str, Any]:
 
 
 @app.post("/sandbox/tickets/{ticket_id}/review")
+@serialized_manual_ticket
 async def review_manual_ticket(ticket_id: str, body: ManualReview) -> dict[str, Any]:
+    if len(body.reason.strip()) < 3 or not body.approver.strip():
+        raise HTTPException(status_code=422, detail="A reviewer identity and a meaningful note are required.")
     snapshot = _manual_ticket_snapshot(ticket_id)
     if snapshot["status"] != "waiting_for_review":
         raise HTTPException(status_code=409, detail="This ticket is not waiting for human review.")
     record = app.state.manual_ticket_records[ticket_id]
     safe_note = mask_text(body.reason.strip())
     intent = body.intent or ("accept" if body.approved else "reject")
+    if intent in {"accept", "reject"} and body.approved != (intent == "accept"):
+        raise HTTPException(status_code=422, detail="The review intent and approval decision must agree.")
     if intent == "request_changes":
         checkpoint = snapshot["waiting_for"]
         stage = {"autonomy_gate": "triage", "pr_merge": "qa",
@@ -705,6 +738,7 @@ async def review_manual_ticket(ticket_id: str, body: ManualReview) -> dict[str, 
                         "revision": revision},
         })
         app.state.pipeline.request_revision(ticket_id, review["approver"], safe_note, interpretation)
+        record["review_requested_at"] = None
         if stage == "triage":
             ticket_text = f"{record['title']}\n{record['body']}"
             try:
@@ -767,6 +801,7 @@ async def review_manual_ticket(ticket_id: str, body: ManualReview) -> dict[str, 
                                  "note": review["note"]})
         return _manual_ticket_snapshot(ticket_id)
     record["reviews"].append(review)
+    record["review_requested_at"] = None
     next_agent = {"autonomy_gate": "Broker-Assign", "pr_merge": "Worker-Deploy",
                   "release_signoff": "Scout-Monitor"}.get(review["checkpoint"], "Orchestrator")
     await publish_message({
@@ -793,6 +828,8 @@ def approvals() -> list[dict[str, Any]]:
 async def publish_message(body: dict[str, Any]) -> dict[str, str]:
     try:
         message = ACLMessage(**body)
+        if message.performative in {"cfp", "propose", "accept-proposal", "reject-proposal"}:
+            message.content.setdefault("stage", "assignment")
         message.content = mask_value(message.content)
         message.policy_context = mask_value(message.policy_context)
         message_details = mask_value({"message_id": message.message_id,
@@ -814,6 +851,7 @@ async def publish_message(body: dict[str, Any]) -> dict[str, str]:
             details={**message_details, "stream_id": stream_id},
         ))
         await event_hub.publish({"type": "message.published", "correlation_id": message.correlation_id,
+                                 "occurred_at": datetime.now(timezone.utc).isoformat(),
                                  "message_id": message.message_id, "performative": message.performative,
                                  "sender": message.sender, "receiver": message.receiver,
                                  "content": message.content, "policy_context": message.policy_context,
@@ -821,6 +859,12 @@ async def publish_message(body: dict[str, Any]) -> dict[str, str]:
         return {"stream_id": stream_id, "message_id": message.message_id}
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/messages/history")
+async def message_history(limit: Annotated[int, Query(ge=1, le=500)] = 200) -> dict[str, Any]:
+    """Recover the conversation on page reload without taking messages from workers."""
+    return {"items": await app.state.bus.recent(count=limit)}
 
 
 @app.get("/messages/next")

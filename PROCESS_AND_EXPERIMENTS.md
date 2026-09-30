@@ -4,14 +4,14 @@ This document describes the implemented course prototype from ticket intake thro
 
 ## 1. Project objective and guardrails
 
-T2D-MAS explores a ticket-to-development pipeline coordinated by software agents. A ticket is normalized, triaged, assigned, investigated, converted into a development plan, implemented, checked by CI, reviewed, and monitored after deployment.
+T2D-MAS explores a ticket-to-development pipeline coordinated by software agents. The intended flow covers intake, triage, assignment, investigation, planning, implementation, QA, deployment, and monitoring. The interactive prototype records heuristic results, drafts, human reviews, and simulated release/monitoring outputs; it does not modify a repository, execute CI, or deploy to production.
 
 The project keeps four system rules visible throughout that flow:
 
 1. **Human approval is required for irreversible actions.** Merge and full-deployment callbacks are blocked without `human_approved=True`.
 2. **Agent decisions are auditable.** Actions, escalations, and approval decisions are appended to `audit_log`; the PostgreSQL schema rejects audit-row updates and deletes.
-3. **Production-node data stays local.** The mobile-agent demo returns only allowlisted aggregate fields.
-4. **Experiments are seeded.** Synthetic inputs and algorithmic choices are controlled by fixed seeds and written with dataset-version metadata. Timings and resource measurements are host observations and can vary between runs.
+3. **Mobile-demo inputs stay local.** The signed node demo uses synthetic inputs and returns only allowlisted aggregate fields; production telemetry is not connected.
+4. **Experiments are seeded.** Synthetic inputs and algorithmic choices are controlled by seed 42 and written with dataset-version metadata. Timings and resource measurements are host observations and can vary between runs.
 
 The autonomy gate is:
 
@@ -53,7 +53,7 @@ The `triage/` package has four pieces:
 - **Severity:** the baseline is TF-IDF plus `LinearSVC`, calibrated with Platt sigmoid calibration. An optional DistilBERT fine-tuning path uses Hugging Face Trainer and returns softmax probabilities.
 - **Gate:** predicted class confidence and risk are combined using the autonomy rule above. The decision contains the selected class, confidence, risk, thresholds, and whether to proceed or escalate.
 
-Triage does not call paid hosted-inference APIs or require API keys. See [`triage/README.md`](triage/README.md) for local model cache and optional download behavior.
+The separate `triage/` package does not require API keys. Interactive Broker-Triage uses local rules by default, with optional OpenRouter proposals when a key is configured. Those proposals remain below the autonomy confidence threshold and require review. See [`triage/README.md`](triage/README.md) for local model cache and optional download behavior.
 
 ### 2.3 Agent roles and collaboration
 
@@ -86,7 +86,7 @@ The orchestrator advances one ticket at a time through these stages:
 8. Deployment
 9. Monitoring
 
-There are three blocking checkpoints: severity sign-off at triage, pull-request review/merge after QA, and release sign-off at deployment. An escalated gate creates an approval-queue entry and the ticket cannot advance until a person approves it. Rejection leaves the ticket blocked. Approval applies to the next transition; it is not a blanket authorization for later irreversible actions.
+There are three blocking checkpoints: severity sign-off at triage, pull-request review/merge after QA, and release sign-off at deployment. An escalated gate creates an approval-queue entry and the ticket cannot advance until a person approves it. Rejection stops the run; it cannot be resumed. Start a new run to reconsider the issue. Approval applies to the next transition; it is not a blanket authorization for later irreversible actions.
 
 Merge and full-deployment callbacks are separately protected by `perform_irreversible()`, which checks the explicit human approval flag again and writes an audit record before execution.
 
@@ -105,7 +105,7 @@ The `envs/` package provides two seeded Gymnasium environments:
 
 PPO is trained for test prioritization and canary choices; DQN is trained for the discrete canary environment. Offline canary training explicitly supplies simulated approval so algorithms can explore full rollout. The regular environment does not infer approval from an agent action.
 
-The React dashboard shows pipeline status, agent status, decision traces, approvals, and performance charts. It uses REST for actions and server-sent events for live updates. Some cards and historical chart values are seeded local demo data.
+The React dashboard has nine views: Ticket overview, Agent conversations, Run a ticket, Human reviews, Decision trail, Ticket history, Meet the agents, Performance example, and Experiment results. Current runs share backend snapshots and recover messages from Redis history and server-sent events. Performance and conversation examples are explicitly labeled; experiment results read saved benchmark files. Agent roles describe configured responsibilities rather than fabricated live host health.
 
 ## 3. Experiment designs
 
@@ -140,7 +140,7 @@ Training reserves the first 80% of cycles for learning and the last 20% for eval
 
 ### 3.5 Four-arm harness
 
-The `eval/` harness is the main comparative experiment. Default configuration is in [`eval/config.json`](eval/config.json): five seeds (`42–46`), 100 tickets per seed, `tau=0.70`, and `risk_max=0.60`. Each seed creates one ticket set; every arm receives the same records for that seed.
+The `eval/` harness is the main comparative experiment. Default configuration is in [`eval/config.json`](eval/config.json): only seed `42`, 100 tickets per arm, `tau=0.70`, and `risk_max=0.60`. Seed 42 creates one ticket set; every arm receives exactly those same records.
 
 The four arms are:
 
@@ -151,7 +151,7 @@ The four arms are:
 | A2 | Static MAS behavior; severity-risk ordering, full-text retrieval, and a small same-component score bonus |
 | A3 | Mobile MAS behavior; same retrieval proxy as A2, plus a serialized mobile bundle and aggregate return in the investigation stage |
 
-The severity model is TF-IDF plus Platt-calibrated LinearSVC. For each seed it is fit on the chronological first 70% and scored on the remaining 30%. This harness split differs intentionally from the data package's 70/10/20 train/validation/test split: the small harness currently has a train and evaluation split and does not use a separate validation partition.
+The severity model is TF-IDF plus Platt-calibrated LinearSVC. It is fit on the chronological first 70% and scored on the remaining 30%. This harness split differs intentionally from the data package's 70/10/20 train/validation/test split: the small harness currently has a train and evaluation split and does not use a separate validation partition.
 
 For each ticket and each of six stages (triage, assignment, investigation, implementation, QA, deployment), the runner records:
 
@@ -171,10 +171,10 @@ The harness implements and emits:
 - **Macro-F1:** average per-class F1 for Low, Medium, High, and Critical on the held-out severity rows.
 - **NAPFD:** calculated from fault ranks in each arm's deterministic priority order.
 - **RCA Top-k:** general utility function, also used in the separate RCA experiment.
-- **DORA-style metrics:** deployment frequency per seed-window day, mean simulated lead time, mean recovery time for simulated failed deployments, change failure rate, and synthetic rework rate.
+- **DORA-style metrics:** deployment frequency per day in the simulated 30-day window, mean simulated lead time, mean recovery time for simulated failed deployments, change failure rate, and synthetic rework rate.
 - **Security injections:** 20 synthetic cases—five each for secret-in-diff, deploy-during-freeze, PII-on-egress, and Critical severity without approval. The target is zero cases passed to the next stage.
 
-The runner aggregates each metric to one mean per seed and arm before the statistical comparisons. Paired Wilcoxon signed-rank tests compare each arm pair; Friedman tests compare all four arms, followed by Nemenyi pairwise comparisons. Cliff's delta reports effect size. Holm-Bonferroni adjusted p-values are recorded for the Wilcoxon pairwise family. With five seed-level observations, results are exploratory and have low statistical power.
+The runner writes descriptive summaries for seed 42 only. Cross-seed consistency, paired significance tests, and effect-size comparisons are not run. These results do not establish statistical superiority of any approach.
 
 ### 3.6 Re-running the experiments
 
@@ -191,31 +191,31 @@ When GNU Make is unavailable, use the same runner directly:
 python -m eval.runner --config eval/config.json --output-root results
 ```
 
-The command writes a new `results/<UTC timestamp>/` directory with a config snapshot, environment metadata, per-ticket and per-stage CSVs, security-injection detail and summary, statistical tests, BAB 9.4 Markdown, severity ROC data, and three charts. To train/evaluate the RL models, run the commands in [`envs/README.md`](envs/README.md). To start the multi-container demo, use `docker compose up --build` and follow [`agents/README.md`](agents/README.md).
+The command writes a new `results/<UTC timestamp>/` directory with a config snapshot, environment metadata, per-ticket and per-stage CSVs, security-injection detail and summary, descriptive summaries, BAB 9.4 Markdown, severity ROC data, and three charts. To train/evaluate the RL models, run the commands in [`envs/README.md`](envs/README.md). To start the multi-container demo, use `docker compose up --build` and follow [`agents/README.md`](agents/README.md).
 
 ## 4. Example harness output
 
-The checked-in sample run at [`results/20260929T153459790123Z/`](results/20260929T153459790123Z/) used dataset version `synthetic-eval-v1`, five seeds, and 500 ticket rows per arm. Selected results:
+The checked-in sample run at [`results/20260930T020846305626/`](results/20260930T020846305626/) used dataset version `synthetic-eval-v1`, only seed 42, and 100 ticket rows per arm. Selected results:
 
 | Arm | Mean network bytes/ticket | Messages/ticket | Recall@5 | MAP | Macro-F1 | Mean NAPFD | Rollback rate |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| A0 | 0 | 0 | 0.429 | 0.242 | 1.000 | 0.490 | 0.056 |
-| A1 | 1,778 | 6 | 1.000 | 0.680 | 1.000 | 0.750 | 0.054 |
-| A2 | 3,556 | 12 | 1.000 | 0.687 | 1.000 | 0.750 | 0.058 |
-| A3 | 4,161 | 13 | 1.000 | 0.685 | 1.000 | 0.750 | 0.074 |
+| A0 | 0 | 0 | 0.429 | 0.242 | 1.000 | 0.490 | 0.070 |
+| A1 | 1,778 | 6 | 1.000 | 0.690 | 1.000 | 0.750 | 0.030 |
+| A2 | 3,556 | 12 | 1.000 | 0.702 | 1.000 | 0.750 | 0.040 |
+| A3 | 4,161 | 13 | 1.000 | 0.702 | 1.000 | 0.750 | 0.100 |
 
 The injection summary recorded `20 blocked`, `0 passed`, meeting the synthetic target. All four arms reached macro-F1 of 1.0 because the generated severity text contains highly distinctive class phrases; this is a generator sanity check, not evidence of equivalent real-world classifier accuracy. A3 records more bytes than A2 because this harness includes a mobile bundle and aggregate return in addition to ACL messages. The wall-clock boxplot shows only tiny local workload timings and should not be interpreted as an operational latency comparison.
 
-See the complete [BAB 9.4 report](results/20260929T153459790123Z/BAB_9_4.md), [per-ticket data](results/20260929T153459790123Z/per_ticket.csv), [per-stage data](results/20260929T153459790123Z/per_stage.csv), [statistical tests](results/20260929T153459790123Z/statistical_tests.csv), and [security injection results](results/20260929T153459790123Z/security_injection_summary.csv).
+See the complete [BAB 9.4 report](results/20260930T020846305626/BAB_9_4.md), [per-ticket data](results/20260930T020846305626/per_ticket.csv), [per-stage data](results/20260930T020846305626/per_stage.csv), and [security injection results](results/20260930T020846305626/security_injection_summary.csv).
 
 ## 5. How to interpret and extend the results
 
-The sample output verifies that the code paths run, the fixed seeds produce the intended synthetic inputs, and the stated policy checks block the included injection cases. It does **not** establish that a multi-agent architecture is faster, cheaper, safer, or more accurate on real enterprise tickets. In particular:
+The sample output verifies that the code paths run, the fixed seed 42 produces the intended synthetic inputs, and the stated policy checks block the included injection cases. It does **not** establish that a multi-agent architecture is faster, cheaper, safer, or more accurate on real enterprise tickets. In particular:
 
 - synthetic severity phrases make the classification task unusually easy;
 - duplicate reports are generated as near-copies and the harness retrieval proxy is lexical rather than the learned embedding/FAISS path;
 - resource counts are simplified proxies; network bytes are serialized payload sizes, token counts are estimates, and deployment/DORA records are simulated;
 - security injections cover four known patterns and do not constitute a broad adversarial security evaluation;
-- fixed seeds reproduce generated data and deterministic algorithmic decisions, but host timing and memory observations can vary.
+- seed 42 reproduces generated data and deterministic algorithmic decisions, but host timing and memory observations can vary.
 
 For a stronger course experiment, replace the synthetic tickets with a versioned public/local export, preserve chronological train/validation/test boundaries, measure the same cases through the actual agent interfaces, log real message and mobile-runtime counters, and predefine an incident/deployment outcome record before calculating DORA-style metrics. Keep all raw production data on its source node and export only approved aggregate features.

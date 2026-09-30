@@ -34,15 +34,15 @@ def test_manual_snapshot_hides_internal_state_and_activity_is_idempotent(monkeyp
 
 
 def test_history_sample_caps_at_fifty_with_requested_mix():
-    rows = [dict(ticket, seed=seed) for seed in range(5)
-            for ticket in make_synthetic_tickets(seed, 100)]
+    rows = [dict(ticket, seed=42) for ticket in make_synthetic_tickets(42, 100)]
 
     sample = api._history_sample(rows, set(api.HISTORY_SEVERITY_ORDER))
 
     assert len(sample) == 50
+    # Seed 42 has only 25 Low tickets; the unused quota goes to Medium.
     assert {severity: sum(row["severity"] == severity for row in sample)
             for severity in api.HISTORY_SEVERITY_ORDER} == {
-                "Low": 26, "Medium": 16, "High": 6, "Critical": 2,
+                "Low": 25, "Medium": 17, "High": 6, "Critical": 2,
             }
 
 

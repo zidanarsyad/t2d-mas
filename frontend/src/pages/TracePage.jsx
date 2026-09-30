@@ -1,11 +1,212 @@
 import { useState } from "react";
-import { ChevronDown, ChevronRight, FileText, Fingerprint, ShieldAlert, ShieldCheck } from "lucide-react";
-import { trace } from "../data";
-import { Heading, Panel, SectionTitle, Severity, Tag } from "../components/Primitives";
-
-function exportTrace(){const file=new Blob([JSON.stringify(trace,null,2)],{type:"application/json"});const url=URL.createObjectURL(file);const link=document.createElement("a");link.href=url;link.download="t2d-decision-trace.json";link.click();URL.revokeObjectURL(url)}
-export default function TracePage(){const [open,setOpen]=useState("20:25:00");return <div className="page-wrap trace-page"><Heading eyebrow="Governance · decision provenance" title="Decision trace" subtitle="Inspect how an agent reached a decision, which policy applied, and what a reviewer approved." action={<button className="button secondary" onClick={exportTrace}><Fingerprint size={15}/>Export trace</button>}/>
- <Panel className="incident-summary"><span className="incident-icon"><ShieldAlert size={17}/></span><div><small className="eyebrow">Selected incident</small><b>TCK-1042 · Checkout crash during flash sale</b><span>Payments API · Android 14 · 14 Sep 2026, 20:05 WIB</span></div><p>6 events <i/> 3 agents <i/> <strong><ShieldAlert size={12}/> 1 human checkpoint</strong></p></Panel>
- <div className="trace-layout"><Panel className="timeline-panel"><div className="panel-head"><SectionTitle title="Decision timeline" detail="Illustrative flash-sale replay; saved sandbox runs are in Ticket History."/><small>14 Sep · WIB</small></div><div className="timeline">{trace.map((item,index)=>{const expanded=open===item.time;const escalated=item.gate==="Escalated";return <article className="trace-row" key={item.time}><div className="trace-rail"><span className={escalated?"alert-marker":"trace-marker"}>{escalated?<ShieldAlert size={14}/>:String(index+1).padStart(2,"0")}</span>{index<trace.length-1&&<i/>}</div><div className="trace-event"><button className="trace-toggle" aria-expanded={expanded} onClick={()=>setOpen(expanded?"":item.time)}><span className="trace-title"><span><time>{item.time}</time><b>{item.agent}</b><small>{item.kind}</small></span>{expanded?<ChevronDown size={16}/>:<ChevronRight size={16}/>}</span><p>{item.summary}</p><span className="trace-tags"><Tag tone={escalated?"amber":"green"}>{escalated?"⚠ Escalated":"✓ Autonomous"}</Tag><small>P {item.confidence.toFixed(2)}</small>{item.approver!=="—"&&<small className="approver">Approved by {item.approver}</small>}</span></button>{expanded&&<div className="trace-expanded"><div><small>INPUT SUMMARY</small><span>{item.input}</span></div><div><small>AGENT OUTPUT</small><span>{item.output}</span></div><div><small>POLICY CONTEXT</small><span>{item.policy}</span></div><div><small>GATE & REVIEWER</small><span>{item.gate} · {item.approver}</span></div><p className="evidence-ref"><FileText size={13}/><b>Evidence</b> {item.evidence}<small>PII masked</small></p></div>}</div></article>})}</div></Panel>
- <aside className="trace-aside"><Panel className="policy-card"><div className="policy-heading"><ShieldCheck size={16}/><div><small className="eyebrow">Applied policy</small><b>Autonomy boundary v1.2</b></div></div><div className="policy-values"><div><span>Confidence threshold (τ)</span><b>0.70</b></div><div><span>Maximum risk (Rmax)</span><b>0.60</b></div><div><span>Critical severity risk</span><b className="risk-value">1.00</b></div></div><p>Autonomous only when <b>P ≥ τ</b> and <b>risk ≤ Rmax</b>.</p></Panel><Panel className="integrity-card"><Fingerprint size={18}/><b>Illustrative trace data</b><span>This timeline is a sample replay, not a live audit query. Saved sandbox events are timestamped in Ticket History.</span><small><i className="online-dot"/>Append-only audit enabled for sandbox runs</small></Panel></aside></div>
- </div>}
+import { Download, MessageSquareText, ShieldCheck } from "lucide-react";
+import { Heading, Panel, SectionTitle, Tag } from "../components/Primitives";
+import OutputSummary from "../components/OutputSummary";
+import ExportDialog from "../components/ExportDialog";
+import { sampleConversation } from "../sampleConversation";
+import {
+  localTime,
+  messageLabel,
+  messageMeaning,
+  recipients,
+  stageInfo,
+} from "../workflow";
+export default function TracePage({
+  records = [],
+  messages = [],
+  ticketId,
+  onSelectTicket,
+  onNavigate,
+}) {
+  const [open, setOpen] = useState(null);
+  const [exportData, setExportData] = useState(null);
+  const sample = !ticketId;
+  const ids = [
+    ...new Set([
+      ...records.map((item) => item.ticket_id),
+      ...messages.map((item) => item.correlation_id),
+    ]),
+  ];
+  const events = sample
+    ? sampleConversation
+    : messages.filter((item) => item.correlation_id === ticketId);
+  const ticket = records.find((item) => item.ticket_id === ticketId);
+  function exportTrace() {
+    setExportData({
+      content: JSON.stringify(
+        {
+          source: sample ? "illustrative_example" : "recorded_messages",
+          ticket: ticket || null,
+          messages: events,
+        },
+        null,
+        2,
+      ),
+      type: "application/json",
+      filename: `t2d-${ticketId || "example"}-trace.json`,
+      description: `${events.length} ${sample ? "illustrative" : "recorded"} messages for ${ticketId || "the flash sale example"}. This export contains only the selected trail.`,
+    });
+  }
+  return (
+    <div className="page-wrap">
+      {exportData && (
+        <ExportDialog {...exportData} onClose={() => setExportData(null)} />
+      )}
+      <Heading
+        eyebrow="Evidence & accountability"
+        title="Why was that decision made?"
+        subtitle="Follow the inputs, shared results, policy checks, and human feedback for one ticket."
+        action={
+          <button
+            className="button secondary"
+            disabled={!events.length}
+            onClick={exportTrace}
+          >
+            <Download size={17} />
+            Export this trail
+          </button>
+        }
+      />
+      <div className="conversation-toolbar">
+        <label>
+          Ticket
+          <select
+            aria-label="Choose decision trail ticket"
+            value={ticketId || ""}
+            onChange={(event) => {
+              onSelectTicket(event.target.value);
+              setOpen(null);
+            }}
+          >
+            <option value="">Example · Flash sale checkout</option>
+            {ids.map((id) => (
+              <option key={id}>{id}</option>
+            ))}
+          </select>
+        </label>
+        <Tag tone={sample ? "purple" : "green"}>
+          {sample ? "Illustrative example" : "Recorded messages"}
+        </Tag>
+        <button
+          className="button secondary"
+          onClick={() => onNavigate("communications", ticketId || "")}
+        >
+          <MessageSquareText size={16} />
+          See conversation
+        </button>
+      </div>
+      <div className="decision-layout">
+        <Panel className="decision-events">
+          <SectionTitle
+            title={
+              ticket?.title || `${ticketId || "TCK-1042"} · Decision trail`
+            }
+            detail={`${events.length} published exchanges · times in WIB`}
+          />
+          {!events.length && (
+            <p className="empty-state">
+              No recorded messages for this ticket. Persisted audit events are
+              available in Ticket history.
+            </p>
+          )}
+          <ol>
+            {events.map((event, index) => {
+              const expanded = open === event.message_id;
+              return (
+                <li key={event.message_id}>
+                  <span className="decision-number">
+                    {event.content?.decision ? (
+                      <ShieldCheck size={17} />
+                    ) : (
+                      index + 1
+                    )}
+                  </span>
+                  <div>
+                    <button
+                      className="decision-toggle"
+                      aria-expanded={expanded}
+                      onClick={() =>
+                        setOpen(expanded ? null : event.message_id)
+                      }
+                    >
+                      <span>
+                        <small>
+                          {localTime(event.occurred_at)} WIB · {event.sender}
+                        </small>
+                        <b>
+                          {event.content?.stage
+                            ? stageInfo(event.content.stage).label
+                            : messageLabel(event.performative)}
+                        </b>
+                        <p>{messageMeaning(event)}</p>
+                      </span>
+                      <span>{expanded ? "−" : "+"}</span>
+                    </button>
+                    {expanded && (
+                      <div className="decision-expanded">
+                        <p>
+                          <b>Shared with:</b> {recipients(event).join(", ")}
+                        </p>
+                        {event.content?.note && (
+                          <blockquote>{event.content.note}</blockquote>
+                        )}
+                        <OutputSummary
+                          output={event.content?.output || event.content}
+                        />
+                        {Object.keys(event.policy_context || {}).length > 0 && (
+                          <p className="policy-inline">
+                            Policy: minimum score{" "}
+                            {event.policy_context.tau ?? "—"} · maximum risk{" "}
+                            {event.policy_context.risk_max ?? "—"}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        </Panel>
+        <aside>
+          <Panel className="decision-policy">
+            <ShieldCheck size={25} />
+            <h2>When does a person decide?</h2>
+            <dl>
+              <div>
+                <dt>Minimum assessment score</dt>
+                <dd>0.70</dd>
+              </div>
+              <div>
+                <dt>Maximum allowed risk</dt>
+                <dd>0.60</dd>
+              </div>
+              <div>
+                <dt>Critical impact risk</dt>
+                <dd>1.00</dd>
+              </div>
+            </dl>
+            <p>
+              A ticket proceeds automatically only when both limits are met.
+              Critical impact always needs review.
+            </p>
+            <p>
+              Change and release reviews require a person even when the
+              assessment is confident.
+            </p>
+            <small>
+              Sandbox scores are rule or optional model assessments. They are
+              not calibrated probabilities.
+            </small>
+            <button
+              className="button secondary"
+              onClick={() => onNavigate("history")}
+            >
+              Open persisted audit history
+            </button>
+          </Panel>
+        </aside>
+      </div>
+    </div>
+  );
+}

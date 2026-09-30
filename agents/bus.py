@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from datetime import datetime, timezone
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -74,6 +75,16 @@ class RedisStreamBus:
             # Redis reports BUSYGROUP if multiple workers initialize together.
             if "BUSYGROUP" not in str(exc):
                 raise
+
+    async def recent(self, count: int = 200) -> list[dict[str, Any]]:
+        """Inspect recent traffic without consuming or acknowledging worker messages."""
+        if self._client is None:
+            raise RuntimeError("connect() must be called before reading messages")
+        rows = await self._client.xrevrange(self.stream, count=count)
+        return [{**json.loads(fields["message"]), "stream_id": entry_id,
+                 "occurred_at": datetime.fromtimestamp(
+                     int(entry_id.split("-")[0]) / 1000, timezone.utc).isoformat()}
+                for entry_id, fields in reversed(rows)]
 
     async def read_group(self, group: str, consumer: str, count: int = 10,
                          block_ms: int = 1000) -> list[tuple[str, ACLMessage]]:

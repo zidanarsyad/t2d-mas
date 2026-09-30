@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Activity, Check, Clock3, FileClock, GitBranch, History, MessageSquareWarning, ShieldAlert, ShieldCheck, X } from "lucide-react";
 import { Heading, Panel, SectionTitle, Severity } from "../components/Primitives";
+import OutputSummary from "../components/OutputSummary";
 
 const armOrder = ["A0", "A1", "A2", "A3"];
 const severityOptions = ["Low", "Medium", "High", "Critical"];
@@ -9,7 +10,7 @@ const label = value => value?.toLowerCase() === "qa" ? "QA" : value ? value[0].t
 const runLabel = value => value?.replace(/Z$/, "") || value;
 const localTime = value => value ? new Date(value).toLocaleString("en-GB", { timeZone: "Asia/Jakarta", dateStyle: "medium", timeStyle: "medium" }) + " WIB" : "Time unavailable";
 
-export default function TicketHistoryPage() {
+export default function TicketHistoryPage({ records = [], onNavigate }) {
   const [view, setView] = useState("saved");
   const [saved, setSaved] = useState([]);
   const [savedLoading, setSavedLoading] = useState(true);
@@ -70,7 +71,7 @@ export default function TicketHistoryPage() {
   const runOptions = useMemo(() => runs.map(run => ({ value: run.run_id, label: `${runLabel(run.run_id)} · ${run.dataset_version}` })), [runs]);
 
   return <div className="page-wrap history-page">
-    <Heading eyebrow="Run records · agent observability" title="Ticket history" subtitle="Review saved sandbox activity and timestamped outputs, or inspect the capped synthetic evaluation sample." action={<span className="history-count"><History size={15}/>{view === "saved" ? saved.length : history?.total ?? "—"} / 50</span>}/>
+    <Heading eyebrow="Saved evidence" title="What happened to each ticket?" subtitle="Review original issues, agent results, and human decisions. Compare simulated experiment tickets in the second tab." action={<span className="history-count"><History size={15}/>{view === "saved" ? saved.length : history?.total ?? "—"} / 50</span>}/>
     <div className="history-view-tabs" role="tablist" aria-label="Ticket history source">
       <button role="tab" aria-selected={view === "saved"} className={view === "saved" ? "active" : ""} onClick={() => setView("saved")}><FileClock size={14}/>Saved ticket runs<span>{saved.length}</span></button>
       <button role="tab" aria-selected={view === "evaluation"} className={view === "evaluation" ? "active" : ""} onClick={() => setView("evaluation")}><Activity size={14}/>Evaluation sample<span>50 max</span></button>
@@ -87,6 +88,7 @@ export default function TicketHistoryPage() {
           <div className="history-rows">{saved.map(item => <button key={item.ticket_id} className={`history-row saved-history-row ${selectedSavedId === item.ticket_id ? "active" : ""}`} onClick={() => setSelectedSavedId(item.ticket_id)}><span className="history-ticket-label"><b>{item.ticket_id}</b><small>{item.title}</small></span><Severity value={item.severity}/><span>{localTime(item.process_started_at)}</span></button>)}</div>
         </Panel>
         <Panel className="history-detail saved-run-detail">{savedTicket ? <>
+          {records.some(item => item.ticket_id === savedTicket.ticket_id) && <button className="button secondary" onClick={() => onNavigate("test", savedTicket.ticket_id)}>Open ticket workspace</button>}
           <div className="history-detail-heading"><div><small className="eyebrow">Persistent process record</small><h2>{savedTicket.ticket_id}</h2></div><Severity value={savedTicket.severity}/></div>
           <article className="original-ticket"><div className="original-ticket-label"><MessageSquareWarning size={15}/><b>Original ticket</b><span>{savedTicket.events.length} process events</span></div><h3>{savedTicket.title}</h3><p>{savedTicket.body}</p><small>Process started {localTime(savedTicket.process_started_at)}</small></article>
           <div className="history-stage-title"><SectionTitle title="Agent and process trace" detail="Each event is shown with its recorded time and audit status"/></div>
@@ -99,7 +101,7 @@ export default function TicketHistoryPage() {
               <div className="saved-event-content"><div className="saved-event-top"><b>{event.agent || "Orchestrator"} · {label(event.stage || event.action.replaceAll("_", " "))}</b><time>{localTime(event.occurred_at)}</time></div>
                 <small className="saved-event-state">{scaffoldEvent ? "Scaffold only · specialist not invoked" : reviewEvent ? `${event.decision} · ${event.approver || "reviewer"}` : outputEvent ? `${event.decision} · ${event.execution_mode?.replaceAll("_", " ") || "recorded output"}` : event.decision?.replaceAll("_", " ") || event.action.replaceAll("_", " ")}</small>
                 {event.performative && <div className="saved-message-route"><b>{event.performative}</b><span>{event.agent}</span><span>→</span><span>{Array.isArray(event.receivers) ? event.receivers.join(", ") : event.receivers || "No recipient"}</span>{event.message_id && <small>{event.message_id}</small>}</div>}
-                {event.output && <pre>{JSON.stringify(event.output, null, 2)}</pre>}
+                {event.output && <details className="technical-details"><summary>Inspect the shared result</summary><OutputSummary output={event.output}/></details>}
                 {event.note && <blockquote><b>Reviewer note · {event.intent?.replaceAll("_", " ") || "decision"}</b><br/>{event.note}{event.interpretation && <><small>Agent interpretation{event.interpretation.interpreter ? ` · ${event.interpretation.interpreter}` : ""}</small><pre>{JSON.stringify(event.interpretation, null, 2)}</pre></>}{event.revision && <small>Revision {event.revision} · feedback recorded with this ticket</small>}</blockquote>}
               </div>
             </li>;

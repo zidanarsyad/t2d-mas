@@ -1,20 +1,240 @@
 import { useMemo, useState } from "react";
-import { Activity, ArrowDownToLine, ArrowUpFromLine, Bot, Check, Clock3, Cpu, MapPin, Radio, Route, Server, Smartphone } from "lucide-react";
+import {
+  ArrowRight,
+  Bot,
+  MapPin,
+  Play,
+  ShieldCheck,
+  Smartphone,
+} from "lucide-react";
 import { agents } from "../data";
 import { Heading, Panel, SectionTitle, Tag } from "../components/Primitives";
-
-const tone={Working:"blue","Needs review":"amber",Idle:"neutral",Migrated:"green",Canary:"purple",Monitoring:"green",Watching:"green"};
-export default function AgentsPage(){
- const [selected,setSelected]=useState(agents[3]);const [filter,setFilter]=useState("All");
- const visible=useMemo(()=>agents.filter(a=>filter==="All"||a.mode===filter.toUpperCase()),[filter]);
- return <div className="page-wrap"><Heading eyebrow="Fleet operations" title="Agent status" subtitle="Health, workload, and mobility paths across the T2D-MAS fleet." action={<span className="fleet-health"><i className="online-dot"/>11 / 11 healthy</span>}/>
-  <div className="agent-layout"><Panel className="agent-list-panel"><div className="panel-head"><SectionTitle title="Agent fleet" detail="11 registered agents"/><select value={filter} onChange={e=>setFilter(e.target.value)} aria-label="Filter agents"><option>All</option><option>Static</option><option>Mobile</option></select></div><div className="agent-list">{visible.map(agent=><button className={`agent-row ${selected.id===agent.id?"active":""}`} key={agent.id} onClick={()=>setSelected(agent)}><span className={`agent-avatar role-${agent.role.toLowerCase()}`}>{agent.mode==="MOBILE"?<Smartphone size={17}/>:<Bot size={17}/>}</span><span className="agent-main"><span><b>{agent.id}</b><small className={`mode ${agent.mode.toLowerCase()}`}>{agent.mode==="MOBILE"?"✈ Mobile":"⌖ Static"}</small></span><small>{agent.task}</small><span className="agent-row-meta"><small><Server size={10}/>{agent.host}</small><small><Cpu size={10}/>{agent.load}%</small><small><Clock3 size={10}/>{agent.beat}</small></span></span><Tag tone={tone[agent.status]}>{agent.status}</Tag></button>)}</div></Panel>
-   <div className="agent-side"><Panel className="agent-profile"><div className="profile-head"><span className={`agent-avatar large role-${selected.role.toLowerCase()}`}>{selected.mode==="MOBILE"?<Smartphone size={20}/>:<Bot size={20}/>}</span><div><small className="eyebrow">{selected.role} · {selected.mode.toLowerCase()} agent</small><h2>{selected.id}</h2><span>{selected.task}</span></div><Tag tone={tone[selected.status]}>{selected.status}</Tag></div><div className="agent-specs"><div><small><Server size={12}/>Current host</small><b>{selected.host}</b></div><div><small><Clock3 size={12}/>Heartbeat</small><b className="healthy">{selected.beat} <Check size={12}/></b></div><div><small><Radio size={12}/>Version</small><b>v0.8.4 · policy 12</b></div></div><div className="load-row"><span><Cpu size={13}/>Workload</span><b>{selected.load}%</b></div><div className="load-track"><i style={{width:`${selected.load}%`}}/></div></Panel>
-    <Panel className="mobility-card"><div className="panel-head"><div><small className="eyebrow">Execution context</small><h3>{selected.mode==="MOBILE"?"Mobile execution path":"Static execution"}</h3></div><span className={`mode ${selected.mode.toLowerCase()}`}>{selected.mode==="MOBILE"?"✈ Code to data":"⌖ Data via API"}</span></div><div className="route" aria-label={`Route ${selected.route?.join(" to ")||selected.host}`}>
-     {(selected.route||[selected.host]).map((node,i)=><span className="route-step" key={`${node}-${i}`}><i>{i===0?<MapPin size={13}/>:<Server size={13}/>}</i><small>{node}</small>{i<(selected.route||[]).length-1&&<b/>}</span>)}
-    </div>{selected.mode==="MOBILE"?<div className="transfer"><div><small><ArrowUpFromLine size={12}/>Bytes sent</small><b>{selected.bytes}</b><span>signed code + state</span></div><div><small><ArrowDownToLine size={12}/>Bytes returned</small><b>{selected.id==="Scout-Log"?"12 MB":"2.1 MB"}</b><span>aggregate features only</span></div></div>:<div className="static-note"><Route size={15}/>This agent reads remote resources through approved APIs.</div>}<div className="privacy-note"><Check size={12}/>Raw production data stays on-node; only allowlisted aggregate features return.</div></Panel>
-    <Panel className="activity-card"><SectionTitle title="Recent activity" detail="Latest agent events"/>{[["Now",`${selected.id} heartbeat received`],["2m ago",selected.mode==="MOBILE"?"Signed bundle verified at target node":"Policy context refreshed"],["8m ago","Action appended to audit log"]].map(([time,text])=><div className="activity-row" key={text}><i><Activity size={12}/></i><span>{text}</span><small>{time}</small></div>)}</Panel>
-   </div>
-  </div>
- </div>;
+import OutputSummary from "../components/OutputSummary";
+import { workflow } from "../workflow";
+import { request } from "../api";
+const purposes = {
+  "Scout-Feedback": "Collects and normalizes issue reports.",
+  "Broker-Triage": "Assesses impact and explains the severity.",
+  "Broker-Assign": "Compares worker bids and allocates a task.",
+  "Scout-Log":
+    "Takes analysis to the data node and returns aggregate evidence.",
+  "Worker-Investigate": "Suggests likely causes from the ticket’s wording.",
+  "Worker-Plan": "Turns findings into tasks and acceptance criteria.",
+  "Worker-Impl": "Drafts a change request. Repository tools are not connected.",
+  "Worker-QA": "Prepares a test checklist. A CI runner is not connected.",
+  "Worker-Deploy":
+    "Proposes a cautious rollout. Production deployment is not connected.",
+  "Scout-Monitor":
+    "Defines the feedback loop. Live telemetry is not connected.",
+  "Security-Policy": "Enforces confidence, risk, and human approval rules.",
+};
+const roleDescriptions = {
+  Scout: "Collects information",
+  Broker: "Coordinates decisions",
+  Worker: "Produces a specialist result",
+  Security: "Enforces review and data policies",
+};
+export default function AgentsPage({ records = [] }) {
+  const [selectedId, setSelectedId] = useState("Scout-Log"),
+    [filter, setFilter] = useState("All"),
+    [node, setNode] = useState("1"),
+    [busy, setBusy] = useState(false),
+    [result, setResult] = useState(null),
+    [error, setError] = useState("");
+  const selected = agents.find((item) => item.id === selectedId),
+    visible = useMemo(
+      () =>
+        agents.filter(
+          (item) => filter === "All" || item.mode === filter.toUpperCase(),
+        ),
+      [filter],
+    );
+  const stage = workflow.find((item) => item.agent === selectedId);
+  const assignments = stage
+    ? records.filter(
+        (item) =>
+          item.current_stage === stage.id &&
+          !["completed", "rejected"].includes(item.status),
+      )
+    : [];
+  async function migrate() {
+    setBusy(true);
+    setError("");
+    setResult(null);
+    try {
+      setResult(await request(`/demo/migrate/${node}`, "POST"));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="page-wrap">
+      <Heading
+        eyebrow="Specialist roles"
+        title="Meet the agent team"
+        subtitle="Understand each agent’s responsibility, how it shares work, and where mobile execution fits."
+        action={<Tag tone="purple">11 designed roles · 4 agent families</Tag>}
+      />
+      <div className="agent-family-grid">
+        {Object.entries(roleDescriptions).map(([role, description]) => (
+          <Panel key={role}>
+            <Bot size={21} />
+            <b>{role}</b>
+            <span>{description}</span>
+          </Panel>
+        ))}
+      </div>
+      <div className="catalog-layout">
+        <Panel className="catalog-list">
+          <div className="focus-heading">
+            <SectionTitle title="Choose an agent" />
+            <select
+              aria-label="Filter agent execution model"
+              value={filter}
+              onChange={(event) => setFilter(event.target.value)}
+            >
+              <option>All</option>
+              <option>Static</option>
+              <option>Mobile</option>
+            </select>
+          </div>
+          {visible.map((item) => (
+            <button
+              className={`catalog-agent ${selectedId === item.id ? "selected" : ""}`}
+              key={item.id}
+              onClick={() => setSelectedId(item.id)}
+            >
+              <span className={`agent-avatar role-${item.role.toLowerCase()}`}>
+                {item.mode === "MOBILE" ? (
+                  <Smartphone size={21} />
+                ) : (
+                  <Bot size={21} />
+                )}
+              </span>
+              <span>
+                <b>{item.id}</b>
+                <small>{purposes[item.id]}</small>
+              </span>
+              <Tag tone={item.mode === "MOBILE" ? "purple" : "neutral"}>
+                {item.mode === "MOBILE" ? "Mobile design" : "Static"}
+              </Tag>
+            </button>
+          ))}
+        </Panel>
+        <div className="catalog-details">
+          <Panel>
+            <small className="eyebrow">
+              {selected.role} · {roleDescriptions[selected.role]}
+            </small>
+            <h2>{selected.id}</h2>
+            <p>{purposes[selected.id]}</p>
+            <div className="checkpoint-callout">
+              {selected.mode === "MOBILE" ? (
+                <Smartphone size={24} />
+              ) : (
+                <MapPin size={24} />
+              )}
+              <div>
+                <b>
+                  {selected.mode === "MOBILE"
+                    ? "Computation moves to the data"
+                    : "Computation stays in one place"}
+                </b>
+                <p>
+                  {selected.mode === "MOBILE"
+                    ? "The design sends code and state to a data node, then returns an allowed summary. The Scout-Log demo below exercises a signed bundle on a container node."
+                    : "This agent runs centrally and shares its result through the message bus."}
+                </p>
+              </div>
+            </div>
+            {stage && (
+              <>
+                <SectionTitle title="Tickets currently at this stage" />
+                {assignments.length ? (
+                  assignments.map((item) => (
+                    <p key={item.ticket_id}>
+                      {item.ticket_id} · {item.title}
+                    </p>
+                  ))
+                ) : (
+                  <p className="muted">
+                    No active tickets at this agent’s stage.
+                  </p>
+                )}
+              </>
+            )}
+            <small className="muted">
+              This catalog describes roles and configured workflow stages. Host
+              heartbeats and workload telemetry are not connected.
+            </small>
+          </Panel>
+          {selectedId === "Scout-Log" && (
+            <Panel className="mobile-demo">
+              <SectionTitle
+                title="Try a mobile agent"
+                detail="Send a signed Scout-Log bundle to one of six local demo nodes."
+              />
+              <div className="mobile-demo-controls">
+                <label>
+                  Destination
+                  <select
+                    aria-label="Mobile agent destination"
+                    value={node}
+                    onChange={(event) => setNode(event.target.value)}
+                    disabled={busy}
+                  >
+                    {[1, 2, 3, 4, 5, 6].map((value) => (
+                      <option key={value} value={value}>
+                        Node {value}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  className="button primary"
+                  disabled={busy}
+                  onClick={migrate}
+                >
+                  <Play size={16} />
+                  {busy ? "Running on node…" : "Run mobile demo"}
+                </button>
+              </div>
+              <p className="muted">
+                Demo input is synthetic. The returned measurements are
+                aggregates; raw data stays at the node.
+              </p>
+              {error && (
+                <p className="form-error" role="alert">
+                  {error}
+                </p>
+              )}
+              {result && (
+                <div role="status">
+                  <div className="mobile-route">
+                    Orchestrator
+                    <ArrowRight size={16} />
+                    Node {result.node_id}
+                    <ArrowRight size={16} />
+                    Aggregate result
+                  </div>
+                  <OutputSummary output={result.result} />
+                  <p className="muted">
+                    Session network counters:{" "}
+                    {result.bytes_sent.toLocaleString()} bytes sent ·{" "}
+                    {result.bytes_returned.toLocaleString()} bytes returned.
+                  </p>
+                  <span className="policy-inline">
+                    <ShieldCheck size={16} />
+                    Signed bundle verified · allowed aggregate fields returned
+                  </span>
+                </div>
+              )}
+            </Panel>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }

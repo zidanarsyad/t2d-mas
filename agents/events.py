@@ -22,12 +22,16 @@ class EventHub:
                     pass
             queue.put_nowait(event)
 
-    async def subscribe(self) -> AsyncIterator[dict[str, Any]]:
+    async def subscribe(self, heartbeat_seconds: float | None = None) -> AsyncIterator[dict[str, Any] | None]:
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(self.queue_size)
         self._subscribers.add(queue)
         try:
             while True:
-                yield await queue.get()
+                try:
+                    yield await asyncio.wait_for(queue.get(), timeout=heartbeat_seconds)
+                except TimeoutError:
+                    # Cancel only the queue wait; keep this subscription alive.
+                    yield None
         finally:
             self._subscribers.discard(queue)
 

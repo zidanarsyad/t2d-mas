@@ -44,8 +44,8 @@ The system uses the autonomy rule `confidence >= tau AND risk <= risk_max`; othe
 | `triage/` | Local embeddings, FAISS duplicate search, severity classifiers, and autonomy gate |
 | `rca/` | PyTorch Geometric service graph builder, GraphSAGE ranker, explanations, and baseline |
 | `envs/` | Gymnasium CI test-prioritization and canary-deployment environments; SB3 training/evaluation |
-| `eval/` | Four-arm benchmark, metrics, security injections, statistical tests, and BAB 9.4 report generator |
-| `frontend/` | React + Tailwind + Recharts dashboard with five screens and SSE updates |
+| `eval/` | Four-arm benchmark, metrics, security injections, and BAB 9.4 report generator |
+| `frontend/` | React + Tailwind + Recharts delivery workspace with nine views, ticket conversations, review gates, and SSE updates |
 | `docker-compose.yml` | Orchestrator, six demo nodes, Redis, and PostgreSQL/pgvector |
 
 Each module has its own README and `requirements.txt`. The root `requirements.txt` installs the full course-project stack, including the larger ML/RL dependencies. To keep installation smaller, install only the requirements for the module you plan to run.
@@ -76,7 +76,7 @@ The services expose:
 - Pending approvals: `http://localhost:8000/approvals`
 - Server-sent events: `http://localhost:8000/events`
 
-The demo API can create tickets, inspect approval requests, publish/read Redis-backed messages, and submit a signed mobile migration bundle. The dashboard's Ticket Test walks through nine local agent stages; Agent Communications shows live ACL handoffs, Contract Net bids, decisions, and recipients; Ticket History stores masked ticket inputs and timestamped outputs in Postgres. See [`agents/README.md`](agents/README.md) and the [agent task and capability catalog](agents/AGENT_CATALOG.md) for routes and prototype boundaries. PostgreSQL initializes from `data/schema.sql` when its volume is first created.
+The demo API can create tickets, inspect approval requests, publish/read Redis-backed messages, and submit a signed mobile migration bundle. The dashboard's Run a ticket screen walks through nine local agent stages; Agent conversations shows live ACL handoffs, Contract Net bids, decisions, and recipients; Ticket history shows masked ticket inputs and timestamped outputs in Postgres. See [`agents/README.md`](agents/README.md) and the [agent task and capability catalog](agents/AGENT_CATALOG.md) for routes and prototype boundaries. PostgreSQL initializes from `data/schema.sql` when its volume is first created.
 
 To stop the demo:
 
@@ -133,11 +133,11 @@ Preprocessing masks common email, phone, and token patterns and assigns chronolo
 
 ## Triage and model downloads
 
-Triage has no paid hosted-inference API integration and requires no API key. Embedding and transformer inference run locally. Public model downloads are disabled by default; cache the model locally or explicitly enable a one-time download with `TRIAGE_ALLOW_MODEL_DOWNLOAD=true`. The TF-IDF + calibrated LinearSVC baseline is local and does not require pretrained weights. See [`triage/README.md`](triage/README.md).
+The separate `triage/` package requires no API key. Interactive Broker-Triage uses local rules by default and can optionally call OpenRouter when a key is configured; see [`agents/README.md`](agents/README.md). Embedding and transformer inference run locally. Public model downloads are disabled by default; cache the model locally or explicitly enable a one-time download with `TRIAGE_ALLOW_MODEL_DOWNLOAD=true`. The TF-IDF + calibrated LinearSVC baseline is local and does not require pretrained weights. See [`triage/README.md`](triage/README.md).
 
 ## Reproducible evaluation
 
-The evaluation harness runs A0 (rule-based), A1 (single-agent), A2 (static MAS), and A3 (mobile MAS) over the same seeded ticket set for five seeds. It writes a timestamped result folder containing configuration, per-ticket/per-stage CSVs, security injection results, statistical comparisons, BAB 9.4 Markdown, ROC data, and plots.
+The evaluation harness runs A0 (rule-based), A1 (single-agent), A2 (static MAS), and A3 (mobile MAS) over the same 100-ticket set using only seed 42. It writes a timestamped result folder containing configuration, per-ticket/per-stage CSVs, security injection results, descriptive summaries, BAB 9.4 Markdown, ROC data, and plots.
 
 With GNU Make:
 
@@ -180,7 +180,7 @@ python -m pytest envs/tests -q
 ## Known limitations
 
 - Several comparisons use synthetic tickets, failure labels, deployment outcomes, and dashboard data; results are for coursework, not operational claims.
-- Wall-clock, CPU, and memory measurements can vary by machine even with fixed random seeds.
+- Wall-clock, CPU, and memory measurements can vary by machine even with the fixed seed 42.
 - The mobile runtime demonstrates signed bundles and container limits but does not provide a hardened isolation boundary for arbitrary code.
 - The interactive pipeline records a complete prototype trace, but investigation is heuristic, implementation only drafts a request, QA has no connected CI runner, and deployment/monitoring do not connect to production systems. The ML, graph RCA, and RL experiments remain separate modules rather than one composed production workflow.
-- The dashboard and mock enterprise APIs are demonstrations; some sidebar and overview data remains local sample state.
+- The performance dashboard and conversation walkthrough are explicitly labeled examples. Ticket overview and human reviews use actual sandbox run state. Active runs are held in backend memory; persisted audit history survives a backend restart, but those old runs cannot be resumed.

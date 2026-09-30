@@ -27,7 +27,6 @@ from agents.synthetic_data import make_synthetic_tickets, synthetic_review_note
 from eval.metrics import average_precision, dora_metrics, macro_f1, napfd, recall_at_k
 from eval.report import build_report
 from eval.security_injection import run_security_injection
-from eval.stats import cliffs_delta, friedman_nemenyi, holm_bonferroni, wilcoxon_signed_rank
 from triage.gate import evaluate_gate
 
 ARMS = ("A0", "A1", "A2", "A3")
@@ -226,76 +225,14 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         writer.writerows(rows)
 
 
-def _write_statistics(rows: list[dict[str, Any]], out_dir: Path, alpha: float) -> None:
-    """Calculate paired seed summaries, Friedman/Nemenyi, effects, and Holm corrections."""
-    metrics = ("total_wall_time_s", "network_bytes", "cpu_seconds", "rollback")
-    grouped: dict[tuple[str, int], list[dict[str, Any]]] = {}
-    for row in rows:
-        grouped.setdefault((row["arm"], row["seed"]), []).append(row)
-    values = {metric: {arm: [] for arm in ARMS} for metric in metrics}
-    for metric in metrics:
-        for arm in ARMS:
-            for seed in sorted({row["seed"] for row in rows}):
-                values[metric][arm].append(statistics.mean(float(r[metric]) for r in grouped[(arm, seed)]))
-    tests, raw_indices = [], []
-    for metric in metrics:
-        for left_index, left in enumerate(ARMS):
-            for right in ARMS[left_index + 1:]:
-                result = wilcoxon_signed_rank(values[metric][left], values[metric][right])
-                raw_indices.append(len(tests))
-                tests.append({"metric": metric, "test": "wilcoxon_signed_rank", "arm_a": left,
-                              "arm_b": right, **result,
-                              "cliffs_delta": cliffs_delta(values[metric][left], values[metric][right])})
-        omnibus, pairs = friedman_nemenyi(values[metric])
-        tests.append({"metric": metric, "test": "friedman", "arm_a": "all", "arm_b": "all",
-                      **omnibus, "cliffs_delta": ""})
-        for pair in pairs:
-            tests.append({"metric": metric, "test": "nemenyi", **pair,
-                          "statistic": pair["q"], "cliffs_delta": ""})
-    corrected = holm_bonferroni([float(tests[index]["p_value"]) for index in raw_indices])
-    for index, adjusted in zip(raw_indices, corrected, strict=True):
-        tests[index]["p_holm"] = adjusted
-        tests[index]["significant_holm"] = adjusted < alpha
-    for row in tests:
-        row["dataset_version"] = "synthetic-eval-v1"
-    _write_csv(out_dir / "statistical_tests.csv", tests)
-
-
-def run(config_path: Path, output_root: Path) -> Path:
-    """Run configured seeds/arms and write one complete timestamped result bundle."""
-    config = json.loads(config_path.read_text(encoding="utf-8"))
-    started_at = datetime.now(timezone.utc)
-    stamp = started_at.strftime("%Y%m%dT%H%M%S%f")
-    out_dir = output_root / stamp
-    out_dir.mkdir(parents=True, exist_ok=False)
-    (out_dir / "config.json").write_text(json.dumps(config, indent=2), encoding="utf-8")
-    metadata = {"created_at_utc": started_at.isoformat(timespec="microseconds").replace("+00:00", "Z"),
-                "dataset_version": config["dataset_version"],
-                "python": platform.python_version(),
-                "platform": platform.platform(), "randomness": "fixed seeds from config",
-                "measurement_note": config["notes"]}
-    (out_dir / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
-    all_tickets, all_stages = [], []
-    for seed in config["seeds"]:
-        tickets = make_synthetic_tickets(int(seed), int(config["tickets_per_seed"]))
-        predictions, split = _prediction_model(tickets, int(seed))
-        for arm in ARMS:
-            arm_tickets, arm_stages = run_arm(int(seed), arm, tickets, predictions, split)
-            all_tickets.extend(arm_tickets)
-            all_stages.extend(arm_stages)
-    _write_csv(out_dir / "per_ticket.csv", all_tickets)
-    _write_csv(out_dir / "per_stage.csv", all_stages)
-    injection_rows, injection_summary = run_security_injection(seed=int(config["master_seed"]))
-    _write_csv(out_dir / "security_injection_cases.csv", injection_rows)
-    _write_csv(out_dir / "security_injection_summary.csv", [injection_summary])
-    if injection_summary["passed_to_next_stage"] != 0:
-        raise RuntimeError("Synthetic policy injection target failed: policy violations escaped")
+def summarize_tickets(all_tickets: list[dict[str, Any]], config: dict[str, Any]) -> list[dict[str, Any]]:
+    """Summarize the four arms using only the seed-42 ticket measurements."""
     summary = []
     for arm in ARMS:
         arm_rows = [row for row in all_tickets if row["arm"] == arm]
         eval_rows = [row for row in arm_rows if row["severity_eval_split"]]
         dora = dora_metrics(
-            # Each independent seed represents a separate 30-day synthetic observation window.
+            # Seed 42 represents one 30-day synthetic observation window.
             successful_deployments=sum(row["deployment_success"] for row in arm_rows),
             total_days=30.0 * len(config["seeds"]),
             lead_times_hours=[row["lead_time_hours_simulated"] for row in arm_rows],
@@ -315,16 +252,49 @@ def run(config_path: Path, output_root: Path) -> Path:
             "peak_memory_bytes_max": max(r["peak_memory_bytes"] for r in arm_rows),
             "macro_f1_severity": macro_f1([r["severity_actual"] for r in eval_rows],
                                            [r["severity_predicted"] for r in eval_rows], SEVERITIES),
-            "mean_recall_at_5": statistics.mean(float(r["recall_at_5"]) for r in arm_rows if r["duplicate_eval_query"]),
-            "mean_average_precision": statistics.mean(float(r["average_precision"]) for r in arm_rows if r["duplicate_eval_query"]),
+            "mean_recall_at_5": statistics.mean(float(r["recall_at_5"]) for r in arm_rows if r.get("duplicate_eval_query", bool(r.get("duplicate_of")))),
+            "mean_average_precision": statistics.mean(float(r["average_precision"]) for r in arm_rows if r.get("duplicate_eval_query", bool(r.get("duplicate_of")))),
             "napfd_mean": statistics.mean(r["napfd"] for r in arm_rows),
             "rollback_rate": statistics.mean(float(r["rollback"]) for r in arm_rows),
             "full_deploy_executions": sum(r["full_deploy_executed"] for r in arm_rows),
             "full_deploy_without_approval": sum(r["full_deploy_executed"] and not r["human_approved"] for r in arm_rows),
             **dora,
         })
-    _write_csv(out_dir / "summary.csv", summary)
-    _write_statistics(all_tickets, out_dir, float(config["alpha"]))
+    return summary
+
+
+def run(config_path: Path, output_root: Path) -> Path:
+    """Run seed 42 across four arms and write one timestamped result bundle."""
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    if config.get("seeds") != [42] or config.get("master_seed") != 42:
+        raise ValueError("This evaluation uses only seed 42; set seeds=[42] and master_seed=42.")
+    started_at = datetime.now(timezone.utc)
+    stamp = started_at.strftime("%Y%m%dT%H%M%S%f")
+    out_dir = output_root / stamp
+    out_dir.mkdir(parents=True, exist_ok=False)
+    (out_dir / "config.json").write_text(json.dumps(config, indent=2), encoding="utf-8")
+    metadata = {"created_at_utc": started_at.isoformat(timespec="microseconds").replace("+00:00", "Z"),
+                "dataset_version": config["dataset_version"],
+                "python": platform.python_version(),
+                "platform": platform.platform(), "randomness": "fixed seed 42",
+                "measurement_note": config["notes"]}
+    (out_dir / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    all_tickets, all_stages = [], []
+    for seed in config["seeds"]:
+        tickets = make_synthetic_tickets(int(seed), int(config["tickets_per_seed"]))
+        predictions, split = _prediction_model(tickets, int(seed))
+        for arm in ARMS:
+            arm_tickets, arm_stages = run_arm(int(seed), arm, tickets, predictions, split)
+            all_tickets.extend(arm_tickets)
+            all_stages.extend(arm_stages)
+    _write_csv(out_dir / "per_ticket.csv", all_tickets)
+    _write_csv(out_dir / "per_stage.csv", all_stages)
+    injection_rows, injection_summary = run_security_injection(seed=int(config["master_seed"]))
+    _write_csv(out_dir / "security_injection_cases.csv", injection_rows)
+    _write_csv(out_dir / "security_injection_summary.csv", [injection_summary])
+    if injection_summary["passed_to_next_stage"] != 0:
+        raise RuntimeError("Synthetic policy injection target failed: policy violations escaped")
+    _write_csv(out_dir / "summary.csv", summarize_tickets(all_tickets, config))
     build_report(out_dir)
     return out_dir
 

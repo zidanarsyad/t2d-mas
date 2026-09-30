@@ -1,87 +1,59 @@
 # T2D-MAS Live Demo Guide
 
-This guide runs the interactive ticket workflow in the browser and explains what to show, how to interact with it, and what each action demonstrates. The prepared sample ticket is designed to reach a visible human-approval gate using the local rule-based triage path.
+This walkthrough shows agent handoffs, worker bidding, three human checkpoints, and saved decisions. Allow 5–8 minutes. Investigation is heuristic; implementation, QA, release, and monitoring produce drafts or simulations. No repository, CI, production deployment, or live telemetry is connected.
 
-## Demo at a glance
+## Prepare
 
-**Audience sees:** a ticket enter the workflow, severity triage and a policy escalation, worker assignment and stage handoffs, two more human review checkpoints, and a persistent audit/history record.
+From the repository root, start Docker Desktop and run:
 
-**Allow:** about 5–8 minutes for the main walkthrough, plus 1–2 minutes for the optional revision branch.
+```powershell
+$env:OPENROUTER_API_KEY = ""
+docker compose up --build
+```
 
-**What this prototype does:** creates auditable local outputs and ACL-style handoffs through nine workflow stages. Investigation is heuristic, planning is templated, and implementation, QA, deployment, and monitoring are drafts or simulations. It does not connect to a source repository, run CI, merge code, deploy to production, or read live telemetry.
+Leaving the key empty selects local rule-based triage. In another terminal, from the repository root:
 
-## Prepare before the presentation
+```powershell
+cd frontend
+npm ci
+npm run dev
+```
 
-1. Install Docker Desktop with its Compose plugin and Node.js. Start Docker Desktop and wait until its engine is ready.
-2. In PowerShell, install the frontend packages once:
+Open the printed Vite URL, normally `http://localhost:5173`. Verify `http://localhost:8000/health` and the **Backend connected** badge. The badge indicates event-stream connectivity. The sidebar stays at the viewport top; small screens use a navigation drawer. Font size and theme controls support presentation visibility.
 
-   ```powershell
-   cd "D:\Universitas Gadjah Mada\Kuliah\Semester 2\Agen Cerdas Enterprise\Project 1\t2d-mas\frontend"
-   npm ci
-   ```
+One browser tab is enough: navigation and refresh recover active runs from the backend. A backend restart preserves audit history but does not restore resumable runs. The conversation screen recovers up to 500 recent Redis messages without consuming the worker queue.
 
-3. Start the backend from the repository root. Leave this terminal open so service logs remain available. Clearing the OpenRouter key for this terminal keeps the sample on local rule-based triage and avoids an external model call:
+## Walkthrough
 
-   ```powershell
-   cd "D:\Universitas Gadjah Mada\Kuliah\Semester 2\Agen Cerdas Enterprise\Project 1\t2d-mas"
-   $env:OPENROUTER_API_KEY = ""
-   docker compose up --build
-   ```
+| Step | Action | Explain |
+| --- | --- | --- |
+| 1 | Open **Agent conversations** and select the labeled example. Select a handoff and inspect the worker bids. | The example illustrates requests, bids, worker selection, shared results, and monitoring feedback. Protocol fields and raw payloads are available under technical details. The example is distinct from a recorded ticket. |
+| 2 | Open **Run a ticket**, click **Use sample issue**, then **Start ticket**. | The editable checkout issue includes data corruption. Local triage assigns Critical, whose risk exceeds 0.60 and requires review. A unique `TEST-…` reference links input, outputs, messages, and decisions. |
+| 3 | Click **Run until review**. | The workflow stops at **Confirm the impact assessment**. Autonomy requires confidence at least 0.70 and risk no more than 0.60. Automatic progression does not approve a checkpoint. |
+| 4 | Enter a reviewer name and a meaningful note, then click **Accept proposal**. | The decision is saved with the reviewer and feedback. Approval clears this checkpoint only. |
+| 5 | Click **Run until review** again; use **See conversation** to inspect the selected ticket’s actual handoffs and bids. Return to **Run a ticket**. | Assignment compares skill, capacity, and cost. The winning worker shares investigation, planning, and change drafts with the next agents. Navigation preserves the run. |
+| 6 | At **Review the proposed change**, inspect the QA draft, enter a reviewer name and note, and click **Accept proposal**. | This records change approval. It does not execute tests or merge code. |
+| 7 | Click **Run until review**. At **Approve the release proposal**, inspect the proposed canary, record a reviewer name and release note, and click **Accept proposal**. | Release approval is separate from change approval. The proposal remains simulated. |
+| 8 | Click **Run until review** to finish. Open **Ticket history** and select this `TEST-…` run. | Inspect the original input, stage outputs, handoffs, and human decisions saved in PostgreSQL. Monitoring shares its result back with Broker-Triage. Times display in WIB. |
 
-   Wait for the orchestrator and supporting services to report healthy. In a second PowerShell window, verify the backend:
+**Next step** advances one transition when narrating slowly. **Human reviews** lists actual waiting runs and uses the same review controls. **Decision trail** explains the selected ticket’s recorded decisions. **Stop run** records rejection and ends the run; it cannot be resumed.
 
-   ```powershell
-   Invoke-RestMethod http://localhost:8000/health
-   ```
+### Optional revision
 
-4. Start the dashboard in a second terminal:
+At the change checkpoint, enter a reviewer name and `Add a regression check for saved-card checkout failures and verify rollback triggers.` Click **Request changes**. Inspect the revised QA draft, use **Next step** to return to the checkpoint, and accept with a fresh note. The feedback loop revises local proposals; it does not execute CI. Ambiguous feedback can leave the run paused for clarification.
 
-   ```powershell
-   cd "D:\Universitas Gadjah Mada\Kuliah\Semester 2\Agen Cerdas Enterprise\Project 1\t2d-mas\frontend"
-   npm run dev
-   ```
+### Optional supporting views
 
-   Open the Vite URL printed by the command, normally `http://localhost:5173`. The header should show **Live · SSE**. If the browser says **Demo mode**, the frontend is open but the API event stream is not connected yet.
+**Meet the agents** explains Scout, Broker, Worker, and Security responsibilities and offers a signed Scout-Log migration against six configured nodes, using synthetic inputs and aggregate-only results. **Performance example** contains explicitly illustrative charts. **Experiment results** reads saved four-arm measurements: only seed 42, 100 tickets per approach. No cross-seed consistency or significance checks are run. Host timings are measured; deployment outcomes and DORA values are simulated.
 
-5. Open the dashboard in two browser tabs. Leave **Agent communications** in one tab and use **Ticket Test** in the other. The ticket test page keeps its active run in page state, so using two tabs lets you show messages without navigating away from and resetting the in-progress test. In the communications tab, confirm its live event-stream status says **Connected**. Optionally open **Ticket History** before the demo to ensure the database-backed history screen loads. Keep one terminal showing Compose logs and the browser at a presentation-friendly zoom. Use the header’s font-size menu if needed.
+Export dialogs show the selected scope and a file preview, with download and copy options. Clipboard exports have been verified; physical download completion was not verified in the in-app browser.
 
-## Main walkthrough
+## Troubleshooting
 
-Use the communications tab for the message-view introduction and live stream; use the Ticket Test tab for all ticket actions. The default **Protocol replay** is a labeled sample. Switch to **Live stream** when the workflow begins to show messages from this actual run.
+- **Backend offline:** check Docker Desktop, Compose logs, and `/health`, then reload the dashboard.
+- **Port 8000 occupied:** set `$env:ORCHESTRATOR_PORT = "8001"` before starting Compose and `$env:VITE_API_TARGET = "http://localhost:8001"` before starting Vite.
+- **No history:** create and advance a ticket, then reopen Ticket history. Preserve the PostgreSQL volume.
+- **Run unavailable after restarting the backend:** inspect persisted history and start a new run; active state is held in backend memory.
+- **Stop services:** use Ctrl+C in the running terminals and `docker compose down`. Avoid `docker compose down -v` when retaining history and signing keys.
 
-| Step | What to do | What happens and what to explain |
-|---|---|---|
-| 1. Introduce the message view | In the communications tab, point out the agent map, message sequence, performative, sender, recipient, correlation ID, content, and policy context. Switch between **Protocol replay** and **Live stream** if useful. | Replay is an illustrative Contract Net conversation; it is not generated by the new ticket. The live view subscribes to backend Server-Sent Events. Selecting a message reveals its route and payload. Explain that agents exchange structured messages instead of sharing one opaque chat. |
-| 2. Open the interactive sandbox | In the Ticket Test tab, click **Load demo ticket**. | The form is filled with a prepared flash-sale checkout issue. The body includes “data corruption,” so local triage assigns **Critical** and the risk gate requires a person to review it. The sample is editable before starting. |
-| 3. Start a ticket run | Click **Start ticket test**. | The backend creates a unique `TEST-…` ticket, records its input, runs intake and triage, and publishes handoffs. The page shows the rule-based severity, its matched cue, and the reason. The ticket remains attached to every later stage. |
-| 4. Show live agent traffic | In the communications tab, choose **Live stream** and select a message. Continue the workflow in the Ticket Test tab. | The stream shows actual messages emitted by the running ticket, including the sender, recipient, message type, and correlation ID. The correlation ID ties the message to this run. The event list updates over SSE without a page refresh. |
-| 5. Run to the first decision | On **Ticket Test**, click **Run automatically**. | The stage list advances through intake and triage, then stops at **autonomy gate**. Automation does not accept the decision for the human. The app shows why the rule-based triage result was escalated; Critical has risk 1.0, above the allowed 0.60. |
-| 6. Record a human decision | Enter `Accept triage result for demo; keep release checks human reviewed.` and click **Accept and continue**. | A reviewer note is required. The choice and note are recorded, and the workflow resumes into assignment. Explain the policy: autonomy requires both confidence at least 0.70 and risk no more than 0.60; a human can explicitly clear an escalation. |
-| 7. Show assignment and workflow progress | Click **Run automatically** again. | The assignment agent compares worker bids, selects a worker, and the workflow records investigation, planning, and implementation outputs. The stage list makes progress visible. Outputs are prototype artifacts: investigation is heuristic, planning is templated, and implementation only drafts a request. |
-| 8. Review the QA checkpoint | The workflow pauses at **pr merge**. Inspect the QA output. Enter `Accept QA checklist for demo; keep merge approval explicit.` and click **Accept and continue**. | This is the first explicit high-impact workflow checkpoint. Approval allows the state machine to move past the QA checkpoint; it does not merge code because no repository is connected. |
-| 9. Review the release checkpoint | Click **Run automatically**. At **release signoff**, inspect the deployment proposal, enter `Approve demo release proposal; use canary and retain rollback checks.` and click **Accept and continue**. | Deployment is a proposed canary only. The release approval is captured as a human decision; no external deployment is invoked. This shows a separate approval after merge review. |
-| 10. Finish and inspect the record | Click **Run automatically** once more. When the run completes, open **Ticket History** and select the newest `TEST-…` run. | Monitoring completes as a recorded prototype stage. Ticket History reloads the saved input, stage outputs, ACL handoffs, timestamps, and reviewer decisions from Postgres. Times display in WIB. Use this screen to close by showing the audit trail behind the dashboard. |
-
-### Optional: show a review-driven revision
-
-At the **pr merge** checkpoint in step 8, use this note instead: `Add a regression check for saved-card checkout failures and verify rollback triggers.` Click **Request changes**. The QA proposal is revised locally and shown with the interpreted reviewer guidance. Click **Advance one step** to submit the revised QA result to the same human checkpoint, then add an acceptance note and click **Accept and continue**. This demonstrates a feedback loop; it does not run tests or merge code.
-
-## How the interaction is wired
-
-- The dashboard calls the FastAPI `/sandbox/tickets` routes to create, advance, and review the ticket.
-- FastAPI sends stage handoffs through the ACL-style message bus and publishes updates on `/events`; the browser listens to the stream and updates the communications view.
-- Stage outputs and review activity are persisted in Postgres and loaded in **Ticket History**.
-- The **Ticket Test** page exposes the workflow state and the three review outcomes: accept, request changes, or reject. A reviewer note is required for each decision.
-- The main route uses **Run automatically** for speed. It advances one stage at a time and halts automatically at each required human checkpoint. **Advance one step** is available when you want to narrate the transitions more slowly.
-
-## Troubleshooting during setup
-
-- **Docker command fails or services stay unhealthy:** make sure Docker Desktop is running; keep the Compose terminal open and check its error output before restarting with `docker compose up --build`.
-- **Port 8000 is already in use:** stop the other service or start Compose with `$env:ORCHESTRATOR_PORT = "8001"`. If using port 8001, set `$env:VITE_API_TARGET = "http://localhost:8001"` in the frontend terminal before `npm run dev`.
-- **Dashboard stays on “Demo mode”:** verify `http://localhost:8000/health`, then reload the frontend. If using a different backend port, check `VITE_API_TARGET`.
-- **Ticket History has no runs:** create and advance a ticket first, then revisit the page. Keep the Postgres Compose volume; it stores the demo records.
-- **Need to stop services:** press Ctrl+C in the Compose terminal and the Vite terminal. `docker compose down` stops the containers while preserving stored history. Do not use `docker compose down -v` if you want to retain demo records and signing keys.
-
-## Presenter closing line
-
-“This demo shows a ticket moving through an auditable multi-agent workflow, with live structured handoffs and people in control at policy, merge, and release checkpoints. The stages that would require repository, CI, deployment, or telemetry integrations are clearly shown as prototype outputs rather than real production actions.”
+The demo shows structured agent communication with people deciding at impact, change, and release checkpoints, while clearly identifying prototype outputs.

@@ -4,3 +4,5 @@
 !.env.example
 .codex-finalizer
 .pptx_build
+/tmp/
+/pytest-cache-files-*/

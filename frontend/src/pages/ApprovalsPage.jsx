@@ -1,26 +1,194 @@
-import { useMemo, useState } from "react";
-import { Check, Clock3, ExternalLink, FileSearch, MessageSquareWarning, ShieldAlert, ShieldCheck, X } from "lucide-react";
-import { approvals } from "../data";
-import { Heading, Panel, SectionTitle, Severity, Tag } from "../components/Primitives";
-
-const waitMinutes=(s)=>{const h=Number(s.match(/(\\d+)h/)?.[1]||0),m=Number(s.match(/(\\d+)m/)?.[1]||0);return h*60+m;};
-export default function ApprovalsPage({onNavigate}){
- const [items,setItems]=useState(approvals),[selectedId,setSelectedId]=useState(approvals[0]?.id),[severity,setSeverity]=useState("All severities"),[reject,setReject]=useState(null),[reason,setReason]=useState(""),[notice,setNotice]=useState("");
- const ordered=useMemo(()=>items.filter(item=>severity==="All severities"||item.severity===severity).sort((a,b)=>b.risk*waitMinutes(b.waiting)-a.risk*waitMinutes(a.waiting)),[items,severity]);
- const selected=ordered.find(x=>x.id===selectedId)||ordered[0];
- async function decide(item,approved,note=""){
-  let backendSaved=false;
-  try { const response=await fetch(`/api/tickets/${item.ticket}/approve`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({approver:"course-reviewer",approved,reason:note})});if(!response.ok)throw new Error("Approval is not queued in FastAPI");if(approved){const resumed=await fetch(`/api/tickets/${item.ticket}/resume`,{method:"POST"});if(!resumed.ok)throw new Error("Pipeline could not resume")}backendSaved=true; }
-  catch { /* Keep the seeded inbox usable when its demo ticket is not in the backend queue. */ }
-  setItems(current=>current.filter(x=>x.id!==item.id));setSelectedId(ordered.find(x=>x.id!==item.id)?.id);setReject(null);setReason("");setNotice(backendSaved?(approved?`${item.ticket} approved and returned to the pipeline.`:`${item.ticket} rejected; the reason was recorded.`):`Demo only: ${item.ticket} changed locally; this seeded request was not queued in FastAPI.`);setTimeout(()=>setNotice(""),5000);
- }
- return <div className="page-wrap"><Heading eyebrow="Human governance" title="Approval inbox" subtitle="Review escalations ordered by risk and wait time. High-impact actions stay paused here." action={<span className="approval-count"><ShieldAlert size={15}/>{items.length} decisions waiting</span>}/>
- {notice&&<div className="toast" role="status"><Check size={14}/>{notice}</div>}
- <div className="approval-layout"><Panel className="approval-list"><div className="panel-head"><SectionTitle title="Needs your decision" detail="Sorted by risk × wait time"/><select aria-label="Filter severity" value={severity} onChange={event=>setSeverity(event.target.value)}><option>All severities</option><option>Critical</option><option>High</option><option>Medium</option><option>Low</option></select></div>{ordered.map(item=><button className={`approval-item ${selected?.id===item.id?"active":""}`} key={item.id} onClick={()=>setSelectedId(item.id)}><span className="approval-top"><Severity value={item.severity}/><b><i/>Risk {item.risk.toFixed(2)}</b></span><strong>{item.title}</strong><small>{item.ticket} · {item.agent}</small><span className="approval-bottom"><span><Clock3 size={12}/>{item.waiting} waiting</span><small>{item.id}</small></span></button>)}{!ordered.length&&<div className="approval-clear"><ShieldCheck size={24}/><b>{items.length?"No matching requests":"Inbox clear"}</b><span>{items.length?`There are no ${severity.toLowerCase()} requests right now.`:"New escalations will appear here."}</span></div>}</Panel>
- {selected?<Panel className="approval-detail"><div className="detail-top"><div><small className="eyebrow">Review request · {selected.id}</small><Severity value={selected.severity}/></div><span className="detail-risk"><i/>Risk {selected.risk.toFixed(2)}</span></div><h2>{selected.title}</h2><div className="detail-meta"><span>{selected.ticket}</span><span>Raised by {selected.agent}</span><span><Clock3 size={12}/>{selected.waiting}</span></div>
- <div className="approval-reason"><MessageSquareWarning size={16}/><div><b>Why this needs review</b><p>{selected.why}</p></div></div><div className="confidence-grid"><div><small>MODEL CONFIDENCE</small><b>{Math.round(selected.confidence*100)}<i>%</i></b><span>Threshold τ = 70%</span></div><div><small>ESTIMATED ACTION RISK</small><b>{selected.risk.toFixed(2)}</b><span>Max allowed 0.60</span></div></div>
- <a href="#trace" className="evidence-link" onClick={e=>{e.preventDefault();onNavigate("trace")}}><i><FileSearch size={16}/></i><span><small>EVIDENCE ATTACHED</small><b>{selected.evidence}</b><em>Open decision trace for context</em></span><ExternalLink size={14}/></a><div className="decision-actions"><button className="button approve" onClick={()=>decide(selected,true)}><Check size={14}/>Approve decision</button><button className="button reject" onClick={()=>{setReject(selected);setReason("")}}><X size={14}/>Reject with reason</button></div><p className="audit-promise"><ShieldCheck size={12}/>Your choice and reviewer identity append to the audit trail.</p>
- </Panel>:<Panel className="approval-clear"><ShieldCheck size={25}/><b>Select a review request</b><span>Inspect the evidence and policy context before deciding.</span></Panel>}</div>
- {reject&&<div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&setReject(null)}><section className="reject-modal" role="dialog" aria-modal="true" aria-labelledby="reject-title"><button className="modal-x" onClick={()=>setReject(null)} aria-label="Close"><X size={17}/></button><span className="modal-symbol"><MessageSquareWarning size={18}/></span><small className="eyebrow">Reviewer decision · {reject.ticket}</small><h2 id="reject-title">Reject this request?</h2><p>Give the owning agent a reason so it can correct the proposal. This note is saved in the audit log.</p><label htmlFor="reject-reason">Reason <i>Required</i></label><textarea id="reject-reason" rows="4" maxLength="500" value={reason} onChange={e=>setReason(e.target.value)} placeholder="Explain what should change before this can proceed…" autoFocus/><div className="modal-actions"><small>{reason.trim().length}/500</small><button className="button secondary" onClick={()=>setReject(null)}>Cancel</button><button className="button danger" disabled={!reason.trim()} onClick={()=>decide(reject,false,reason.trim())}>Confirm rejection</button></div></section></div>}
- </div>
+import { useState } from "react";
+import { ArrowRight, RefreshCw, ShieldCheck } from "lucide-react";
+import {
+  Heading,
+  Panel,
+  SectionTitle,
+  Severity,
+} from "../components/Primitives";
+import OutputSummary from "../components/OutputSummary";
+import ReviewControls from "../components/ReviewControls";
+import { checkpointLabel, stageInfo } from "../workflow";
+const risk = { Low: 0.1, Medium: 0.3, High: 0.6, Critical: 1 };
+export default function ApprovalsPage({
+  records,
+  onRecord,
+  onNavigate,
+  loading,
+  error,
+  onRefresh,
+}) {
+  const [selectedId, setSelectedId] = useState(""),
+    [severity, setSeverity] = useState("All"),
+    [lastReviewed, setLastReviewed] = useState(null);
+  const pending = records.filter(
+    (item) => item.status === "waiting_for_review",
+  );
+  const ordered = pending
+    .filter((item) => severity === "All" || item.severity === severity)
+    .sort(
+      (a, b) =>
+        (risk[b.severity] || 0) *
+          (Date.now() - Date.parse(b.review_requested_at || b.created_at) ||
+            1) -
+        (risk[a.severity] || 0) *
+          (Date.now() - Date.parse(a.review_requested_at || a.created_at) || 1),
+    );
+  const selected =
+    ordered.find((item) => item.ticket_id === selectedId) || ordered[0];
+  return (
+    <div className="page-wrap">
+      <Heading
+        eyebrow="People stay in control"
+        title="What needs your decision?"
+        subtitle="Inspect the agent’s proposal, explain your decision, and keep the ticket moving safely."
+        action={
+          <span className="approval-count">
+            <ShieldCheck size={17} />
+            {pending.length} pending reviews
+          </span>
+        }
+      />
+      {lastReviewed && (
+        <div className="workspace-banner" role="status">
+          <ShieldCheck size={20} />
+          <div>
+            <b>Decision recorded for {lastReviewed.ticket_id}</b>
+            <p>
+              {lastReviewed.reviews.at(-1)?.decision === "changes_requested"
+                ? "The agent revised its proposal. Open the ticket to inspect the changes and continue."
+                : lastReviewed.status === "rejected"
+                  ? "The run is stopped. Your reason remains in its audit history."
+                  : "Your note is saved with this ticket."}
+            </p>
+          </div>
+          <button
+            className="button secondary"
+            onClick={() => onNavigate("test", lastReviewed.ticket_id)}
+          >
+            Open ticket
+            <ArrowRight size={16} />
+          </button>
+        </div>
+      )}
+      {error && (
+        <div className="workspace-banner error" role="alert">
+          <div>
+            <b>Review queue unavailable</b>
+            <p>{error}</p>
+          </div>
+          <button className="button secondary" onClick={onRefresh}>
+            <RefreshCw size={16} />
+            Try again
+          </button>
+        </div>
+      )}
+      {loading && <p role="status">Loading review requests…</p>}
+      <div className="review-inbox-layout">
+        <Panel className="review-inbox-list">
+          <div className="focus-heading">
+            <SectionTitle
+              title="Waiting for a person"
+              detail="Sorted by impact risk and time waiting for review."
+            />
+            <select
+              aria-label="Filter review severity"
+              value={severity}
+              onChange={(event) => setSeverity(event.target.value)}
+            >
+              {["All", "Critical", "High", "Medium", "Low"].map((value) => (
+                <option key={value}>{value}</option>
+              ))}
+            </select>
+          </div>
+          {ordered.map((item) => (
+            <button
+              className={`review-request ${item.ticket_id === selected?.ticket_id ? "selected" : ""}`}
+              key={item.ticket_id}
+              onClick={() => setSelectedId(item.ticket_id)}
+            >
+              <Severity value={item.severity} />
+              <b>{item.title}</b>
+              <span>{checkpointLabel(item.waiting_for)}</span>
+              <small>
+                {item.ticket_id} · {stageInfo(item.current_stage).agent}
+              </small>
+            </button>
+          ))}
+          {!ordered.length && !loading && !error && (
+            <div className="empty-state">
+              <ShieldCheck size={28} />
+              <h2>
+                {pending.length
+                  ? "No matching reviews"
+                  : "You’re all caught up"}
+              </h2>
+              <p>
+                {pending.length
+                  ? "Choose a different severity to see pending requests."
+                  : "Run a ticket to see human review checkpoints here."}
+              </p>
+              <button
+                className="button secondary"
+                onClick={() => onNavigate("test", "")}
+              >
+                Run a ticket
+                <ArrowRight size={16} />
+              </button>
+            </div>
+          )}
+        </Panel>
+        {selected ? (
+          <Panel className="review-inbox-detail">
+            <small className="eyebrow">
+              {selected.ticket_id} · {stageInfo(selected.current_stage).agent}
+            </small>
+            <h2>{checkpointLabel(selected.waiting_for)}</h2>
+            <p>{selected.title}</p>
+            <div className="checkpoint-callout">
+              <ShieldCheck size={20} />
+              <div>
+                <b>Why the agent paused</b>
+                <p>
+                  {selected.waiting_for === "autonomy_gate"
+                    ? `${selected.severity} impact with assessment score ${selected.severity_confidence.toFixed(2)}. Automatic decisions require a score of at least 0.70 and risk no greater than 0.60. ${selected.severity_rationale}`
+                    : selected.waiting_for === "pr_merge"
+                      ? "Change review always needs a person. This prototype contains a draft request and verification checklist; no patch or CI run has been executed."
+                      : "A full release requires a person’s approval. This is a rollout proposal; no production deployment will execute."}
+                </p>
+              </div>
+            </div>
+            <SectionTitle title="Agent proposal" />
+            <OutputSummary
+              output={selected.agent_outputs?.[selected.current_stage]}
+            />
+            <button
+              className="text-button"
+              onClick={() => onNavigate("communications", selected.ticket_id)}
+            >
+              Inspect the agent conversation
+              <ArrowRight size={15} />
+            </button>
+            <ReviewControls
+              key={`${selected.ticket_id}:${selected.waiting_for}`}
+              record={selected}
+              onRecord={(next) => {
+                onRecord(next);
+                setLastReviewed(next);
+              }}
+            />
+          </Panel>
+        ) : (
+          <Panel className="empty-state review-placeholder">
+            <ShieldCheck size={32} />
+            <h2>Human approval is a deliberate checkpoint</h2>
+            <p>
+              Select a request to inspect its evidence and record a decision.
+              Completed decisions stay in the ticket’s history.
+            </p>
+          </Panel>
+        )}
+      </div>
+    </div>
+  );
 }
