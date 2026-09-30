@@ -8,6 +8,7 @@ from typing import Any
 
 from agents.audit import AuditEvent, AuditSink
 from agents.logging_config import correlation_id_var
+from agents.pii import mask_value
 from agents.security_policy import GateDecision, evaluate_gate
 
 
@@ -71,6 +72,7 @@ class Agent(ABC):
             perceived = self.perceive(observation)
             self.remember(context.correlation_id, perceived)
             proposal = self.reason(perceived)
+            audit_proposal = mask_value(proposal)
             decision = evaluate_gate(context.probability, context.risk_class,
                                      self.autonomy_policy.tau, self.autonomy_policy.risk_max)
             # Merge and production deploy remain approval-only even when the generic gate passes.
@@ -90,7 +92,8 @@ class Agent(ABC):
                     confidence=context.probability,
                     human_approved=context.human_approved,
                     details={"role": self.role, "mobility": self.mobility.value,
-                             "gate_reason": decision.reason, "risk": decision.risk},
+                             "gate_reason": decision.reason, "risk": decision.risk,
+                             "proposal": audit_proposal},
                 ))
                 result = self.act(proposal, context)
                 status = "executed"
@@ -106,8 +109,16 @@ class Agent(ABC):
                 confidence=context.probability,
                 human_approved=context.human_approved,
                 details={"role": self.role, "mobility": self.mobility.value,
-                         "gate_reason": decision.reason, "risk": decision.risk},
+                         "gate_reason": decision.reason, "risk": decision.risk,
+                         "proposal": audit_proposal, "output": mask_value(result)},
             ))
-            return self.report(result), decision
+            reported = self.report(result)
+            self.audit_sink.append(AuditEvent(
+                actor_id=self.agent_id, action="agent_report", decision="reported",
+                correlation_id=context.correlation_id, ticket_id=context.ticket_id,
+                confidence=context.probability, human_approved=context.human_approved,
+                details={"role": self.role, "output": mask_value(reported)},
+            ))
+            return reported, decision
         finally:
             correlation_id_var.reset(token)

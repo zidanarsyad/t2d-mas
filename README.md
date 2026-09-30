@@ -54,6 +54,8 @@ Each module has its own README and `requirements.txt`. The root `requirements.tx
 
 Requirements: Docker with the Compose plugin.
 
+For the presentation flow, prepared sample ticket, review prompts, and screen-by-screen explanations, see the [live demo guide](deliverables/T2D-MAS-Live-Demo-Guide.md).
+
 ```sh
 docker compose up --build
 ```
@@ -74,7 +76,7 @@ The services expose:
 - Pending approvals: `http://localhost:8000/approvals`
 - Server-sent events: `http://localhost:8000/events`
 
-The demo API can create tickets, inspect approval requests, publish/read Redis-backed messages, and submit a signed mobile migration bundle. See [`agents/README.md`](agents/README.md) for routes and the flash-sale scenario. PostgreSQL initializes from `data/schema.sql` when its volume is first created.
+The demo API can create tickets, inspect approval requests, publish/read Redis-backed messages, and submit a signed mobile migration bundle. The dashboard's Ticket Test walks through nine local agent stages; Agent Communications shows live ACL handoffs, Contract Net bids, decisions, and recipients; Ticket History stores masked ticket inputs and timestamped outputs in Postgres. See [`agents/README.md`](agents/README.md) and the [agent task and capability catalog](agents/AGENT_CATALOG.md) for routes and prototype boundaries. PostgreSQL initializes from `data/schema.sql` when its volume is first created.
 
 To stop the demo:
 
@@ -180,4 +182,5 @@ python -m pytest envs/tests -q
 - Several comparisons use synthetic tickets, failure labels, deployment outcomes, and dashboard data; results are for coursework, not operational claims.
 - Wall-clock, CPU, and memory measurements can vary by machine even with fixed random seeds.
 - The mobile runtime demonstrates signed bundles and container limits but does not provide a hardened isolation boundary for arbitrary code.
-- The dashboard and mock enterprise APIs are demonstration scaffolds and use in-memory state in places.
+- The interactive pipeline records a complete prototype trace, but investigation is heuristic, implementation only drafts a request, QA has no connected CI runner, and deployment/monitoring do not connect to production systems. The ML, graph RCA, and RL experiments remain separate modules rather than one composed production workflow.
+- The dashboard and mock enterprise APIs are demonstrations; some sidebar and overview data remains local sample state.

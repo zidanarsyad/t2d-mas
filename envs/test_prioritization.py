@@ -1,6 +1,7 @@
 """Gymnasium test-prioritization environment inspired by Retecs."""
-__test__ = False  # This module defines an environment; it is not a pytest test file.
 from __future__ import annotations
+
+__test__ = False  # This module defines an environment; it is not a pytest test file.
 
 from collections.abc import Sequence
 
@@ -39,11 +40,9 @@ class TestPrioritizationEnv(gym.Env):
         self.budget_seconds = float(budget_seconds)
         self.lambda_time = float(lambda_time)
         self.num_tests = len(self.cycles[0].test_ids)
-        self.observation_space = spaces.Box(
-            low=np.asarray([0, 0, 0, 0, 0], dtype=np.float32),
-            high=np.asarray([1, np.inf, 1, 1, 1], dtype=np.float32),
-            shape=(self.num_tests, 5), dtype=np.float32,
-        )
+        low = np.tile(np.asarray([0, 0, 0, 0, 0], dtype=np.float32), (self.num_tests, 1))
+        high = np.tile(np.asarray([1, np.inf, 1, 1, 1], dtype=np.float32), (self.num_tests, 1))
+        self.observation_space = spaces.Box(low=low, high=high, dtype=np.float32)
         self.action_space = spaces.Box(low=0.0, high=1.0,
                                        shape=(self.num_tests,), dtype=np.float32)
         self._cursor = 0

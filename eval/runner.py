@@ -11,7 +11,7 @@ import re
 import statistics
 import time
 import tracemalloc
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +23,7 @@ from sklearn.svm import LinearSVC
 
 from agents.bus import ACLMessage, serialize_acl_message
 from agents.mobility import AgentBundle, serialize_bundle
+from agents.synthetic_data import make_synthetic_tickets, synthetic_review_note
 from eval.metrics import average_precision, dora_metrics, macro_f1, napfd, recall_at_k
 from eval.report import build_report
 from eval.security_injection import run_security_injection
@@ -36,35 +37,6 @@ ARM_DESCRIPTIONS = {
     "A0": "Rule-based, single process", "A1": "Single agent",
     "A2": "Multi-agent with static agents", "A3": "Multi-agent with mobile agents",
 }
-
-
-def make_tickets(seed: int, count: int) -> list[dict[str, Any]]:
-    """Create one reproducible ticket set shared unchanged by all four arms."""
-    rng = random.Random(seed)
-    rows = []
-    for index in range(count):
-        severity = SEVERITIES[index % len(SEVERITIES)]
-        parent_index = index - 4 if index >= 4 and index % 7 == 0 else None
-        duplicate_of = f"TCK-{parent_index:05d}" if parent_index is not None else ""
-        keyword = {"Low": "minor cosmetic", "Medium": "feature regression",
-                   "High": "service outage", "Critical": "critical data loss"}[severity]
-        if parent_index is not None:
-            # Synthetic duplicate examples reuse issue content, without exposing the label in text.
-            parent = rows[parent_index]
-            title = f"Follow-up: {parent['title']}"
-            body = f"{parent['body']} Additional reproduction details from report {index}."
-            component = parent["component"]
-        else:
-            title = f"{keyword} in component-{index % 8}"
-            body = (f"{title}. Reproduction details for build {1 + index % 13}. "
-                    f"Impact score {rng.randrange(1, 100)}.")
-            component = f"component-{index % 8}"
-        created_at = (datetime(2026, 1, 1, tzinfo=timezone.utc) + timedelta(hours=index)).isoformat()
-        rows.append({"ticket_id": f"TCK-{index:05d}", "title": title, "body": body,
-                     "component": component, "severity": severity,
-                     "created_at": created_at, "duplicate_of": duplicate_of,
-                     "is_fault": int(severity in ("High", "Critical"))})
-    return rows
 
 
 def _prediction_model(tickets: list[dict[str, Any]], seed: int):
@@ -228,6 +200,10 @@ def run_arm(seed: int, arm: str, tickets: list[dict[str, Any]],
             "messages": messages, "llm_tokens_estimated": tokens_est,
             "cpu_seconds": cpu_total, "peak_memory_bytes": ticket_peak,
             "human_approved": human_approved, "full_deploy_requested": full_requested,
+            "review_decision": ("accepted" if human_approved else "rejected")
+                if ticket["severity"] in {"High", "Critical"} else "not_required",
+            "review_note": synthetic_review_note(ticket["severity"], human_approved)
+                if ticket["severity"] in {"High", "Critical"} else "",
             "full_deploy_executed": full_executed,
             "deployment_success": success, "rollback": rollback,
             "lead_time_hours_simulated": max(0.05, wall_total * 100 + (index % 11)),
@@ -288,18 +264,20 @@ def _write_statistics(rows: list[dict[str, Any]], out_dir: Path, alpha: float) -
 def run(config_path: Path, output_root: Path) -> Path:
     """Run configured seeds/arms and write one complete timestamped result bundle."""
     config = json.loads(config_path.read_text(encoding="utf-8"))
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    started_at = datetime.now(timezone.utc)
+    stamp = started_at.strftime("%Y%m%dT%H%M%S%f")
     out_dir = output_root / stamp
     out_dir.mkdir(parents=True, exist_ok=False)
     (out_dir / "config.json").write_text(json.dumps(config, indent=2), encoding="utf-8")
-    metadata = {"created_at_utc": stamp, "dataset_version": config["dataset_version"],
+    metadata = {"created_at_utc": started_at.isoformat(timespec="microseconds").replace("+00:00", "Z"),
+                "dataset_version": config["dataset_version"],
                 "python": platform.python_version(),
                 "platform": platform.platform(), "randomness": "fixed seeds from config",
                 "measurement_note": config["notes"]}
     (out_dir / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     all_tickets, all_stages = [], []
     for seed in config["seeds"]:
-        tickets = make_tickets(int(seed), int(config["tickets_per_seed"]))
+        tickets = make_synthetic_tickets(int(seed), int(config["tickets_per_seed"]))
         predictions, split = _prediction_model(tickets, int(seed))
         for arm in ARMS:
             arm_tickets, arm_stages = run_arm(int(seed), arm, tickets, predictions, split)

@@ -7,12 +7,16 @@ services:
       REDIS_URL: redis://redis:6379/0
       PRIVATE_KEY_DIR: /run/t2d/private
       PUBLIC_KEY_DIR: /run/t2d/public
+      RESULTS_DIR: /app/results
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-qwen/qwen3.8-27b:free}
       NODE_URLS: http://node-1:8000,http://node-2:8000,http://node-3:8000,http://node-4:8000,http://node-5:8000,http://node-6:8000
     ports:
       - "${ORCHESTRATOR_PORT:-8000}:8000"
     volumes:
       - agent-private-keys:/run/t2d/private
       - agent-public-keys:/run/t2d/public
+      - ./results:/app/results:ro
     depends_on:
       postgres:
         condition: service_healthy

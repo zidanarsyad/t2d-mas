@@ -25,8 +25,8 @@ class Stage(str, Enum):
     MONITORING = "monitoring"
 
 STAGES = list(Stage)
-# Checkpoints reflect BAB 5: severity sign-off, human PR review/merge, and release sign-off.
-CHECKPOINTS = {Stage.TRIAGE: "severity_signoff", Stage.QA: "pr_merge", Stage.DEPLOYMENT: "release_signoff"}
+# Triage escalates through its confidence/risk gate; PR merge and release stay explicit checkpoints.
+CHECKPOINTS = {Stage.QA: "pr_merge", Stage.DEPLOYMENT: "release_signoff"}
 
 
 @dataclass
@@ -36,6 +36,7 @@ class TicketRun:
     waiting_for: str | None = None
     approval_queue: list[dict[str, Any]] = field(default_factory=list)
     human_approved: bool = False
+    completed: bool = False
     history: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -58,7 +59,7 @@ class T2DOrchestrator:
 
     def advance(self, ticket_id: str, decision: GateDecision | None = None,
                 human_approved: bool = False, correlation_id: str | None = None) -> TicketRun:
-        """Advance one stage, pausing at escalations and all three named checkpoints."""
+        """Advance one stage, pausing at escalations and configured human checkpoints."""
         run = self.runs[ticket_id]
         correlation_id = correlation_id or ticket_id
         correlation_id_var.set(correlation_id)
@@ -74,6 +75,7 @@ class T2DOrchestrator:
         previous = run.stage
         index = STAGES.index(previous)
         if index == len(STAGES) - 1:
+            run.completed = True
             self._log(run, "pipeline_complete", "complete", {})
             return run
         run.stage = STAGES[index + 1]
@@ -87,13 +89,18 @@ class T2DOrchestrator:
         return run
 
     def approve(self, ticket_id: str, approver: str, approved: bool,
-                reason: str = "") -> TicketRun:
+                reason: str = "", intent: str = "accept",
+                interpretation: dict[str, Any] | None = None,
+                next_stage: str | None = None) -> TicketRun:
         run = self.runs[ticket_id]
         if not run.waiting_for:
             raise ValueError("ticket is not waiting for human approval")
         item = run.approval_queue.pop(0)
         self._log(run, "human_approval", "approved" if approved else "rejected",
                   {"checkpoint": item["checkpoint"], "approver": approver, "reason": reason,
+                   "intent": intent,
+                   "stage": run.stage.value,
+                   "next_stage": next_stage, "interpretation": interpretation,
                    "human_approved": approved})
         if not approved:
             run.waiting_for = "rejected"
@@ -110,6 +117,22 @@ class T2DOrchestrator:
             raise PipelinePaused("no approval recorded")
         # Re-enter advance with explicit human flag; this advances only one checkpoint stage.
         return self.advance(ticket_id, human_approved=True)
+
+    def request_revision(self, ticket_id: str, approver: str, reason: str,
+                         interpretation: dict[str, Any]) -> TicketRun:
+        """Clear the current pause without approving it, so the same stage can be revised."""
+        run = self.runs[ticket_id]
+        if not run.waiting_for:
+            raise PipelinePaused("ticket is not waiting for review")
+        checkpoint = run.waiting_for
+        run.approval_queue.pop(0)
+        run.waiting_for = None
+        run.human_approved = False
+        self._log(run, "review_revision_requested", "revision_requested", {
+            "checkpoint": checkpoint, "stage": run.stage.value, "approver": approver, "reason": reason,
+            "intent": "request_changes", "interpretation": interpretation,
+        })
+        return run
 
     def perform_irreversible(self, ticket_id: str, action: str, human_approved: bool,
                              callback: Any | None = None) -> bool:

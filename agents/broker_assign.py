@@ -76,8 +76,10 @@ class ContractNetBroker:
                                                "utility": winner.score,
                                                "rejected": [bid.worker_id for bid in rejects]}))
         await self.bus.publish(ACLMessage("accept-proposal", correlation_id,
-            {"worker_id": winner.worker_id, "utility": winner.score}, sender="broker-assign@orchestrator"))
+            {"worker_id": winner.worker_id, "utility": winner.score},
+            sender="broker-assign@orchestrator", receiver=[winner.worker_id]))
         for proposal in rejects:
             await self.bus.publish(ACLMessage("reject-proposal", correlation_id,
-                {"worker_id": proposal.worker_id, "utility": proposal.score}, sender="broker-assign@orchestrator"))
+                {"worker_id": proposal.worker_id, "utility": proposal.score},
+                sender="broker-assign@orchestrator", receiver=[proposal.worker_id]))
         return winner
