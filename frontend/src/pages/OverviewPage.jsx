@@ -35,14 +35,14 @@ export default function OverviewPage({ onNavigate }) {
   return <div className="page-wrap overview-page">
     <Heading
       eyebrow="Start here · project guide"
-      title="From user feedback to a safer software release"
+      title="From feedback to a safer release"
       subtitle="T2D-MAS helps a software team sort a reported issue, prepare a fix, and review important decisions before release."
       action={<div className="overview-actions"><button className="button secondary" onClick={() => onNavigate("experiments")}><FlaskConical size={14}/>Compare A0–A3</button><button className="button primary" onClick={() => onNavigate("test")}><Beaker size={14}/>Try a sample ticket</button></div>}
     />
 
     <Panel className="overview-purpose">
       <span className="overview-purpose-icon"><Workflow size={20}/></span>
-      <div><small>WHAT THIS PROJECT DOES</small><b>One guided journey, with people in control of consequential decisions.</b><p>Specialist software agents help with the hand-offs from an incoming issue to a proposed release. A person reviews impact, the proposed change, and the release proposal.</p></div>
+      <div><small>WHAT THIS PROJECT DOES</small><b>One guided workflow, with people reviewing key decisions.</b><p>Specialist software agents help with the hand-offs from an incoming issue to a proposed release. A person reviews impact, the proposed change, and the release proposal.</p></div>
     </Panel>
 
     <div className="overview-facts">
