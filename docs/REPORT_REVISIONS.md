@@ -1,12 +1,13 @@
-# Report revisions for the Google Doc
+# Report revisions for the report's source file
 
 *Date: 20 October 2026.* The final report, `docs/Laporan_Proyek1_T2D-MAS_Final.pdf`, is exported
-from a Google Doc that is not in this repository. This sheet lists every passage that no longer
-matches the code, with Indonesian text ready to paste. Apply the edits in the Google Doc, export
-the PDF again, and replace the file in `docs/`.
+from `Laporan_Proyek1_T2D-MAS_Final.docx`. That is a Word file kept in the group's Google Drive and
+edited in Google Docs, not a native Google Doc. This sheet lists every passage that no longer
+matches the code, with Indonesian text ready to paste. Apply the edits to that file, export the PDF
+again, and replace the file in `docs/`.
 
 - **Part 1 is required.** On 20 October six numbers were patched directly into the PDF. If they are
-  not also changed in the Google Doc, the next export brings the old numbers back.
+  not also changed in the source file, the next export brings the old numbers back.
 - **Part 2** updates the passages that describe the implementation. Design passages (worked
   examples, the flash-sale timeline in Tabel 37, the specifications in Lampiran B) stay as they are;
   where the code differs, a short note is added instead.
@@ -17,6 +18,12 @@ the PDF again, and replace the file in `docs/`.
   It is not the source of the PDF and was not revised.
 
 The reasons behind each change are in [AUDIT.md](AUDIT.md).
+
+**Status (20 October 2026):** every edit below is applied as a tracked change (author "Claude") in a
+local copy of the .docx (`docs/Laporan_Proyek1_T2D-MAS_Final.docx`, deliberately not committed). That
+copy was built on the Drive file's revision of
+20 October, 10:33 UTC, including the cover-page change made that day. It still has to be uploaded as
+a new version of the Drive file. Part 3's figure is marked with a comment on the Gambar 3 caption.
 
 ## Part 1: numbers already patched in the PDF
 
@@ -113,10 +120,10 @@ also settles item 4 of Tabel 46 (see item 19).
 | Tabel | Kolom kunci | Fungsi |
 |---|---|---|
 | tickets | ticket_id, source, title, body, component, severity, status, language, app_version, platform, duplicate_of, parent_ticket_id, dataset_version | Entitas utama tiket, termasuk tautan duplikat dan tiket lanjutan dari pemantauan |
-| audit_log | audit_id, occurred_at, correlation_id, actor_id, action, ticket_id, decision, human_approved, details (jsonb) | Jejak audit append-only: keluaran agen, hasil gerbang, pesan, persetujuan, dan aksi yang diblokir |
 | code_changes | change_id, ticket_id, repository, branch_name, diff_summary, files, tests_added, merged, human_approved, approved_by | Draf PR dari Worker-Impl; trigger menolak merged tanpa human_approved |
 | deployments | deployment_id, change_id, ticket_id, environment (canary/production), strategy, risk_score, status, human_approved, slo_breach, rollback_of | Canary dan rilis dari Worker-Deploy; trigger menolak status deployed tanpa human_approved |
 | policies | policy_id, name, tau, risk_max, rules (jsonb), version, active, approved_by | Kebijakan tata kelola berversi; diisi dari agents/policy.py saat orkestrator mulai |
+| audit_log | audit_id, occurred_at, correlation_id, actor_id, action, ticket_id, decision, human_approved, details (jsonb) | Jejak audit append-only: keluaran agen, hasil gerbang, pesan, persetujuan, dan aksi yang diblokir |
 | slo_baselines | service, metric, window_minutes, baseline_mean, baseline_std, slo_threshold, unit | Garis dasar bagi Scout-Monitor; diisi dari simulator saat orkestrator mulai |
 
 **Add after the table:**
@@ -224,7 +231,7 @@ Change these rows; the others stay.
 > dan setiap panel diberi label sumber datanya (Live, Simulated by backend, Replay, Report model,
 > atau Recorded).
 
-**§8.3.6, first bullet:** add "(belum diimplementasikan pada purwarupa)" after "…dalam 30 detik (jendela pembatalan)". **Add two bullets:**
+**§8.3.6, first bullet:** change "…dalam 30 detik (jendela pembatalan)." to "…dalam 30 detik (jendela pembatalan); fitur ini belum diimplementasikan pada purwarupa." **Add two bullets:**
 
 > - Animasi mengikuti pengaturan prefers-reduced-motion: tidak ada yang berjalan sendiri, setiap
 >   langkah tetap dapat dibuka, dan setiap animasi memiliki versi teks.
@@ -305,21 +312,24 @@ Change these rows; the others stay.
 
 **Replace with** "Struktur repositori saat ini tersaji berikut ini." **and:**
 
+Each line is at most 80 characters, which is what fits in the report's 8 pt Courier box.
+
 ```
 t2d-mas/
-├── README.md            # cara menjalankan: mode lokal tanpa Docker, atau Docker Compose
-├── docker-compose.yml   # orkestrator + 6 node + redis + postgres
-├── agents/              # orkestrator FastAPI dan agen: scouts, brokers, workers,
-│                        # security_policy, pipeline, policy, tools (simulator), mobility
-├── triage/              # embedder, dedup, severity, gate (luring; gate dipakai langsung)
-├── rca/                 # graph_builder, model, explain, baseline, numerics
-├── envs/                # test_prioritization, canary_deploy
-├── data/                # schema.sql (enam tabel), loaders, preprocess
-├── eval/                # runner, metrics, security_injection, stats, report, compare_runs
-├── frontend/            # dasbor React: delapan tampilan dengan animasi
-├── deliverables/        # slide dan panduan demo
-├── docs/                # ide awal, laporan akhir, audit
-└── results/             # keluaran eksperimen bertanggal
+├── README.md                 # cara menjalankan: mode lokal atau Docker
+├── docker-compose.yml        # orkestrator + 6 node + redis + postgres
+├── agents/                   # orkestrator FastAPI dan agen: scouts, brokers,
+│                             # workers, security_policy, pipeline, tools
+├── triage/                   # embedder, dedup, severity, gate (luring)
+├── rca/                      # graph_builder, model, explain, baseline
+├── envs/                     # test_prioritization, canary_deploy
+├── data/                     # schema.sql (enam tabel), loaders, preprocess
+├── eval/                     # runner, metrics, security_injection, stats,
+│                             # report, compare_runs
+├── frontend/                 # dasbor React: delapan tampilan dengan animasi
+├── deliverables/             # slide dan panduan demo
+├── docs/                     # ide awal, laporan akhir, audit
+└── results/                  # keluaran eksperimen bertanggal
 ```
 
 ### 19. Lampiran A, Tabel 46

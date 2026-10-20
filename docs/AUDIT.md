@@ -112,7 +112,7 @@ You chose to keep the evaluation exactly as the report cites it. These are worth
 
 ## Where the report no longer matches the code
 
-The PDF is exported from a Google Doc that is not in this repository, so the PDF itself was not edited. [REPORT_REVISIONS.md](REPORT_REVISIONS.md) turns the points below, and smaller ones in §4.4, §5.6.2, §8.2, §8.4, §8.5, §10, Bab 12 and Lampiran A and B, into Indonesian text ready to paste into that Google Doc. It also lists six numbers that were patched into the PDF but not yet into the Google Doc. The presentation deck was updated to match the code.
+The PDF is exported from a Word file in the group's Google Drive (edited in Google Docs), so the PDF itself was not edited. [REPORT_REVISIONS.md](REPORT_REVISIONS.md) turns the points below, and smaller ones in §4.4, §5.6.2, §8.2, §8.4, §8.5, §10, Bab 12 and Lampiran A and B, into Indonesian text. It also lists six numbers that were patched into the PDF but not yet into the source file. All of it is applied as tracked changes in a local copy of the .docx (not committed), ready to upload as a new version of the Drive file. The presentation deck was updated to match the code.
 
 - **Abstract and §5.5:** "three approval gates". Now six gate types: merge and release always; duplicate review, autonomy, secret scan and canary review only when their rule triggers.
 - **§8.1, Tabel 34:** says the flow does not run end to end and that no LLM is connected. Both are out of date: nine agents run end to end on seeded simulators, and a free OpenRouter model is optional.
