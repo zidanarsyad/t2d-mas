@@ -39,4 +39,13 @@ With the current code, `make eval` reproduces every non-timing column of [`resul
 
 The report's wall times in Tabel 40 (0,102–0,198 ms) and its wall-time Friedman p = 0,0136 are that run's host observations; a rerun measures different values.
 
+To check a fresh run, write it outside `results/` (the dashboard shows the newest folder there) and compare:
+
+```sh
+python -m eval.runner --config eval/config.json --output-root <scratch folder>
+python -m eval.compare_runs results/20260930T020846305626 <scratch folder>/<new run>
+```
+
+`compare_runs` skips the timing columns, compares every other value exactly, and prints `Runs match on every non-timing value.` when they agree. `make eval-check` does both steps, writing to `.eval-check/`, which git ignores.
+
 An earlier run, `results/20260929T145202896406Z`, was produced before the duplicate-retrieval fix and reported MAP above 1. It is no longer in the working tree but remains in git history: `git show da03470:results/20260929T145202896406Z/summary.csv`. Report versions before 2026-10-20 cited its timings.

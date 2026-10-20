@@ -50,7 +50,7 @@ The four project rules hold throughout:
 
 ## Run it (no Docker needed)
 
-You need Python 3.11+ and Node 20+. Use two terminals, both starting from the repository root.
+You need Python 3.11+ and Node 20.19+ (Vite 7 needs it). Use two terminals, both starting from the repository root.
 
 ```powershell
 python -m pip install -r agents/requirements.txt
@@ -82,7 +82,7 @@ Open the address Vite prints (usually http://localhost:5173).
 | `rca/` | Offline graph root-cause ranking (GraphSAGE, GNNExplainer, PageRank) ([README](rca/README.md)) |
 | `envs/` | Offline reinforcement learning for test order and canary releases ([README](envs/README.md)) |
 | `eval/` | The A0–A3 evaluation behind the report's numbers ([README](eval/README.md)) |
-| `docs/` | The original idea, the final report, [the audit](docs/AUDIT.md), process notes |
+| `docs/` | The original idea, the final report, [the audit](docs/AUDIT.md), [report revisions](docs/REPORT_REVISIONS.md), process notes |
 | `deliverables/` | Presentation deck and live demo guide |
 
 The live agents reuse three small pieces of the offline modules:

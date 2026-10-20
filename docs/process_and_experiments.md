@@ -105,6 +105,8 @@ The `envs/` package provides two seeded Gymnasium environments:
 
 PPO is trained for test prioritization and canary choices; DQN is trained for the discrete canary environment. Offline canary training explicitly supplies simulated approval so algorithms can explore full rollout. The regular environment does not infer approval from an agent action.
 
+The live pipeline does not run these trained policies. Worker-QA selects about 100 of 3,400 tests with a risk-aware rule under an 8-minute budget and scores the order with the same NAPFD function; Worker-Deploy starts the 5% canary on its own only when the release risk score is at most 0.30, and the full release always waits for sign-off.
+
 The React dashboard shows the live pipeline with animations (the ticket moving through the stages, agent messages, the mobile agent's trip, monitoring and the feedback loop) and a replay mode that works without the backend; see [`frontend/README.md`](../frontend/README.md) for its views.
 
 ## 3. Experiment designs

@@ -18,6 +18,8 @@ If a cycle has no fault labels, NAPFD is defined as 1.0. The default is a 60-sec
 
 Training uses `SimulatedHumanApproval`, which provides that explicit signal inside offline simulation so PPO/DQN can explore full rollout. The regular environment defaults to no approval; an agent action alone cannot authorize a full rollout.
 
+The live agents do not run these policies. Worker-QA picks tests with a risk-aware rule under an 8-minute budget and scores the order with the same NAPFD function (`eval/metrics.py`; `envs/metrics.py` re-exports it). Worker-Deploy uses the fixed rule in `agents/policy.py`: the 5% canary starts on its own only when the release risk is at most 0.30, and the full release always needs a person.
+
 ## Data
 
 `generate_simulated_cycles(seed=42)` produces 200 reproducible CI cycles with test outcomes, flakiness, durations, history, and seeded fault injections. `load_public_ci_csv(path_or_url)` accepts public/local CSV with required columns `cycle_id,test_id,duration,failed`. It derives missing history fields and defaults unavailable diff/flaky features to zero. Dataset versions are content hashes for CSV sources or seed/config hashes for simulation.

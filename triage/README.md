@@ -8,4 +8,6 @@ The classical TF-IDF + calibrated LinearSVC severity baseline is fully local and
 
 `local_files_only` is used for model loading unless download is explicitly enabled. See the [Sentence Transformers loading options](https://www.sbert.net/docs/package_reference/sentence_transformer/model.html) and [Transformers model loading options](https://huggingface.co/docs/transformers/main_classes/model) for this local-only behavior.
 
-Interactive Broker-Triage is a separate implementation: it uses local rules by default and optionally calls OpenRouter when configured. See [agent setup](../agents/README.md) for its review policy and API-key configuration.
+## How the live agents use this package
+
+The live Broker-Triage agent does not load these models. It reuses one file, `gate.py` (the autonomy rule: act alone only if P ≥ τ and risk ≤ R_max), through `agents/security_policy.py`. Its duplicate search is a lighter version of `DuplicateDetector`: TF-IDF over character 3–5-grams with the same bands (`agents/similarity.py`). Its severity comes from local English and Indonesian rules, optionally with a free OpenRouter model. See [agent setup](../agents/README.md) for its review policy and API-key configuration.

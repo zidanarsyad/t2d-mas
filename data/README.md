@@ -41,7 +41,7 @@ python -m data.report_dataset_stats --input data/output/processed/train.parquet 
 
 Preprocessing sorts by creation time and assigns consecutive 70/10/20 partitions (rounding goes to the test split). This chronological split prevents future-to-past leakage; it is not stratified by severity, so severity counts in each split are emitted by the statistics report instead. Text cleanup collapses consecutive repeated lines, masks e-mails, phone numbers and tokens first (using the same rules as the live agents in `agents/pii.py`), and then replaces version/build strings. Description lengths are measured in characters.
 
-Each loader row, processed row, report row, mock API response, and chart metadata carries or identifies `dataset_version`. By default loaders derive a content hash from normalized rows; give `--dataset-version` to keep one explicit label across multiple exports and splits.
+Each loader row, processed row, report row, and chart metadata carries or identifies `dataset_version`. By default loaders derive a content hash from normalized rows; give `--dataset-version` to keep one explicit label across multiple exports and splits.
 
 ## Database schema
 

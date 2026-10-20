@@ -38,6 +38,10 @@ Good to know for a demo:
   clearer note, and its question stays above the review form until you answer.
 - Demo options on the start form: a planted test secret (the secret scan must stop it) and a
   shipped regression (monitoring must open a follow-up ticket, which appears on the Board).
+- If the inbox request fails while the badge says Live (for example, the backend is still
+  starting), the page retries three times, 1.5 s apart, before it shows the offline sample.
+- The dev proxy opens a new connection for every request (`vite.config.js`). uvicorn closes idle
+  connections after 5 s, and reusing a closed one would fail the request with a 500.
 
 ## The eight views
 

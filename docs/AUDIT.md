@@ -43,7 +43,7 @@ Wherever the prototype has no real system to talk to (repository, CI, cluster, t
 | 3 Investigation | Scout-Log (mobile) aggregates on the nodes; GNN ranks suspect services (§6.6, B.3) | Keyword guesses; no node data | Scout-Log visits all six nodes. The break-even rule L > (A + R)·3 decides, per node, whether code is shipped there. Only aggregates return. Suspects are ranked with the report's GraphSAGE-mean calculation over the call chain. |
 | 4 Planning | Subtasks, Given/When/Then criteria, estimate (T15, T26) | Fixed template | Generated from the investigation: subtasks with estimates, three Given/When/Then criteria, and a sprint-capacity check. |
 | 5 Implementation | Draft PR; secret scan with injection demo (T19, T36) | "No code generated" | A simulated draft PR is stored in `code_changes`. Security-Policy scans it, and a leaked secret blocks it until it is redrafted (demo switch `inject_test_secret`). |
-| 6 QA | RL test prioritization, NAPFD (§6.5.1, B.2) | "Not run" | Risk-aware selection of about 120 of 3,400 tests within an 8-minute budget, scored with the real NAPFD function. Merging always needs a review. |
+| 6 QA | RL test prioritization, NAPFD (§6.5.1, B.2) | "Not run" | Risk-aware selection of about 100 of 3,400 tests within an 8-minute budget, scored with the real NAPFD function. Merging always needs a review. |
 | 7 Deployment | 5% canary on its own only if risk ≤ 0.30; full deploy never alone; auto-rollback (T21, §6.5.2) | Proposal only | Computes a risk score. Runs the canary itself or asks a person. An SLO breach rolls back automatically. The full release runs only after sign-off and is recorded in `deployments`. |
 | 8–9 Monitoring and feedback loop | Anomalies against SLO baselines open new tickets (F-12, T37) | "Awaiting telemetry" | Post-release metrics are compared with the SLO baselines. An anomaly opens a follow-up ticket (demo switch `simulate_regression`), and so do monitoring-view alerts. |
 
@@ -62,6 +62,7 @@ Wherever the prototype has no real system to talk to (repository, CI, cluster, t
 | Rule 3: raw data stays on nodes | | Nodes had no data | Nodes keep their own logs; only allowlisted aggregates leave. A test proves it. |
 | Rule 4: reproducible numbers | | 5-seed evaluation restored | Simulators are seeded from the ticket id. `python -m eval.compare_runs` checks that a fresh evaluation matches the cited run, and it does. |
 | Free APIs only | | Enforced for OpenRouter | Unchanged: only `:free` models, no key needed; local mode needs no services at all. |
+| Dashboard (§8.3, B.6) | Five screens, live events, a Static/Mobile toggle, a migration animation with a byte counter | Ten overlapping views, about 220 unused CSS rules, no animation | Eight views mapped to the report's screens, three animations (pipeline flow, Scout-Log trip, monitoring board) and a replay mode that works without the backend. See [UI_UX_AND_PROJECT_ALIGNMENT.md](UI_UX_AND_PROJECT_ALIGNMENT.md). |
 
 ## Code removed or fixed
 
@@ -89,7 +90,10 @@ Wherever the prototype has no real system to talk to (repository, CI, cluster, t
 - `data/preprocess.py` could leak part of an e-mail address, because version masking ran before e-mail masking.
 - Dates were masked as phone numbers.
 - The Contract Net winner was ignored.
-- `app.py` (977 lines) is split into four small route modules and two services.
+- The dashboard's dev proxy reused connections that uvicorn had already closed, so some requests failed with a 500.
+- The feedback inbox stayed on its offline sample when the backend answered late.
+
+**Restructured:** `app.py` (977 lines) is split into four small route modules and two services (`pipeline.py`, `reviews.py`).
 
 **Repository hygiene:**
 - `.gitignore` and `.dockerignore` added. The Docker build context no longer includes the local `.venv` (PyTorch and friends).
@@ -108,9 +112,10 @@ You chose to keep the evaluation exactly as the report cites it. These are worth
 
 ## Where the report no longer matches the code
 
-These are for whoever edits the Google Doc behind the PDF. The PDF and PPTX were not edited.
+The PDF is exported from a Google Doc that is not in this repository, so the PDF itself was not edited. [REPORT_REVISIONS.md](REPORT_REVISIONS.md) turns the points below, and smaller ones in §4.4, §5.6.2, §8.2, §8.4, §8.5, §10, Bab 12 and Lampiran A and B, into Indonesian text ready to paste into that Google Doc. It also lists six numbers that were patched into the PDF but not yet into the Google Doc. The presentation deck was updated to match the code.
 
 - **Abstract and §5.5:** "three approval gates". Now six gate types: merge and release always; duplicate review, autonomy, secret scan and canary review only when their rule triggers.
+- **§8.1, Tabel 34:** says the flow does not run end to end and that no LLM is connected. Both are out of date: nine agents run end to end on seeded simulators, and a free OpenRouter model is optional.
 - **§6.4:** live duplicate detection uses TF-IDF over character n-grams (the idea's "TF-IDF sederhana"). SBERT/FAISS stays in the offline `triage/` module.
 - **§7.1, T28:** the schema has six tables (listed above); `ticket_embeddings`, `agents`, `messages`, `evidence`, `tasks` and `test_runs` were removed, and pgvector is not used.
 - **§7.4, T32:** the mock enterprise APIs are now in-process simulators (`agents/tools.py`).

@@ -22,6 +22,8 @@ Each training example is `(graph, incident_node_indices)`. `train_ranker` uses p
 
 The hand-configured numeric fixture uses mean aggregation over the adjacent services of the A->B->C chain with `W=0.5I` and readout `[0.6, 0.4]`. That reference calculation gives 1.850, 2.225, and 2.600. The trained two-layer model learns its own parameters; the fixture is not a claim that training always produces those scores.
 
+The live investigation agent (`agents/workers.py`) neither trains nor loads the GraphSAGE model, so the backend needs no PyTorch. It ranks the suspect services on the call chain with `rca/numerics.py` (`reference_mean_sage_scores`), the same hand-configured mean-aggregation calculation as this fixture.
+
 Run the assignment checks with:
 
 ```powershell
