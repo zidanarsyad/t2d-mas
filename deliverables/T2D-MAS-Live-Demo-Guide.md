@@ -270,7 +270,7 @@ good place to show it.
 ## Troubleshooting
 
 - **The badge says Replay mode.** The backend is not reachable. Start it; the dashboard reconnects by itself. Overview, Decision trace, Agents and Monitoring keep playing their recorded or simulated versions meanwhile.
-- **"The backend is not reachable" now and then, while the badge says Live.** Another server answers on port 8000 for a few seconds. A typical cause is this project's Docker stack, whose orchestrator keeps restarting (for example because its Redis container is not running). Stop it with `docker compose down`, or set `$env:VITE_API_TARGET = "http://127.0.0.1:8000"` before `npm run dev`. Then select the button again.
+- **"The backend is not reachable" now and then, while the badge says Live.** Another program may be using port 8000, for example an old Docker stack of this project (`docker ps`). Stop it with `docker compose down`, then select the button again.
 - **Port 8000 is busy.** Start the backend on another port, for example `--port 8010`, and set `$env:VITE_API_TARGET = "http://127.0.0.1:8010"` before `npm run dev`.
 - **A message goes straight to "Linked as a duplicate".** It already ran on this backend. Restart the backend for a clean board, or pick another message.
 - **The Decision trace shows only a timeline, labelled Recorded.** The dashboard loads the last 500 agent messages. For older tickets the trace falls back to the saved audit log, without the animation. Pick a recent ticket.

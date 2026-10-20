@@ -16,7 +16,7 @@ npm install
 npm run dev
 ```
 
-Vite proxies `/api/*` to `http://localhost:8000` (set `VITE_API_TARGET` for another host) and
+Vite proxies `/api/*` to `http://127.0.0.1:8000` (set `VITE_API_TARGET` for another host) and
 serves the dashboard on `http://localhost:5173`. Without the backend the dashboard still works in
 **replay mode** (see below).
 
@@ -42,6 +42,9 @@ Good to know for a demo:
   starting), the page retries three times, 1.5 s apart, before it shows the offline sample.
 - The dev proxy opens a new connection for every request (`vite.config.js`). uvicorn closes idle
   connections after 5 s, and reusing a closed one would fail the request with a 500.
+- The dev proxy targets `127.0.0.1`, not `localhost`. uvicorn listens on IPv4 only, but Node tries
+  `localhost` over IPv6 first. A Docker stack of this project that restarts in a loop answers there
+  for a few seconds each time, and those requests failed with "The backend is not reachable".
 
 ## The eight views
 
