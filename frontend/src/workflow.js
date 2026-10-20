@@ -100,6 +100,11 @@ export const messageLabel = (value) =>
 export function messageMeaning(message) {
   const content = message?.content || {};
   const decision = content.decision || content.output?.decision;
+  // A rate-limited model call falls back to the local rules, which face the same limits.
+  const rateLimitNote =
+    content.rate_limited || content.output?.rate_limited
+      ? " The model service was rate limited, so the local rule-based assessment was checked against the same limits."
+      : "";
   if (message?.performative === "cfp")
     return "The coordinator asks available workers to offer their skills, workload, and cost for this task.";
   if (message?.performative === "propose")
@@ -115,9 +120,9 @@ export function messageMeaning(message) {
   if (decision === "request_changes")
     return "The reviewer asks the responsible agent to revise its result before continuing.";
   if (decision === "escalated")
-    return "The impact or uncertainty exceeds the policy limits. A person must review this result.";
+    return `The impact or uncertainty exceeds the policy limits. A person must review this result.${rateLimitNote}`;
   if (decision === "autonomous")
-    return "The assessment meets the confidence and risk limits, so worker selection may continue.";
+    return `The assessment meets the confidence and risk limits, so worker selection may continue.${rateLimitNote}`;
   if (content.stage === "monitoring")
     return "The monitoring agent returns its result to triage, closing the feedback loop. Live telemetry is not connected in this prototype.";
   if (content.stage)

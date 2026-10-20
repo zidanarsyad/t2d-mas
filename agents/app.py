@@ -27,7 +27,7 @@ from agents.mobility import MobileAgentRuntime
 from agents.orchestrator import T2DOrchestrator
 from agents.orchestrator import PipelinePaused, STAGES
 from agents.pii import mask_text, mask_value
-from agents.security_policy import GateDecision, evaluate_gate
+from agents.security_policy import evaluate_gate
 from agents.severity_triage import classify_ticket_with_llm, interpret_review_feedback
 from agents.synthetic_data import make_synthetic_tickets, synthetic_review_note
 from agents.workflow_agents import HANDOFF_TARGETS, STAGE_AGENT_IDS, assignment_proposals, prototype_stage_output
@@ -127,10 +127,11 @@ def _record_manual_stage_activity(ticket_id: str, record: dict[str, Any], stage:
                   "rationale": record["severity_rationale"], "matched_cues": record["severity_cues"],
                   "provider": record.get("severity_provider", "rules"),
                   "fallback_reason": record.get("severity_fallback_reason"),
-                  "rate_limit_fail_safe": record.get("severity_rate_limited", False),
+                  "rate_limited": record.get("severity_rate_limited", False),
                   "reviewer_override": record.get("severity_reviewer_override"),
                   "preferred_model": record.get("severity_preferred_model"),
-                  "fallback_used": record.get("severity_fallback_used", False)}
+                  "fallback_used": record.get("severity_fallback_used", False),
+                  "model_fallback_reason": record.get("severity_model_fallback_reason")}
         guidance = record.get("_review_guidance", {}).get(stage)
         if guidance:
             output["reviewer_guidance"] = guidance
@@ -615,6 +616,7 @@ async def start_manual_ticket(body: ManualTicket) -> dict[str, Any]:
         "severity_model": triage.get("model"),
         "severity_preferred_model": triage.get("preferred_model"),
         "severity_fallback_used": triage.get("fallback_used", False),
+        "severity_model_fallback_reason": triage.get("model_fallback_reason"),
         "severity_cues": triage["matched_cues"],
         "component": "Manual test",
         "reviews": [],
@@ -663,10 +665,10 @@ async def advance_manual_ticket(ticket_id: str) -> dict[str, Any]:
                 await _publish_stage_handoff(ticket_id, stage, stage_output)
         decision = None
         if stage == "triage":
-            gate_decision = evaluate_gate(record["severity_confidence"], record["severity"])
-            rate_limit_fail_safe = bool(record.get("severity_rate_limited"))
-            decision = (GateDecision(True, "openrouter_rate_limited_auto_accept", gate_decision.risk)
-                        if rate_limit_fail_safe else gate_decision)
+            # An OpenRouter rate limit (HTTP 429) already fell back to the local rules result,
+            # which gets no special pass: escalate when confidence < tau or risk > R_max.
+            decision = evaluate_gate(record["severity_confidence"], record["severity"])
+            rate_limited = bool(record.get("severity_rate_limited"))
             if not record["_policy_recorded"]:
                 app.state.audit.append(AuditEvent(
                     actor_id="Security-Policy", action="policy_gate",
@@ -675,7 +677,7 @@ async def advance_manual_ticket(ticket_id: str) -> dict[str, Any]:
                     confidence=record["severity_confidence"],
                     details={"stage": "triage", "severity": record["severity"],
                              "risk": decision.risk, "reason": decision.reason,
-                             "rate_limit_fail_safe": rate_limit_fail_safe,
+                             "rate_limited": rate_limited,
                              "provider": record.get("severity_provider"),
                              "fallback_reason": record.get("severity_fallback_reason"),
                              "tau": 0.70, "risk_max": 0.60},
@@ -685,7 +687,7 @@ async def advance_manual_ticket(ticket_id: str) -> dict[str, Any]:
                 ticket_id, "triage",
                 {"decision": "autonomous" if decision.autonomous else "escalated",
                  "risk": decision.risk, "reason": decision.reason,
-                 "severity": record["severity"]},
+                 "severity": record["severity"], "rate_limited": rate_limited},
                 "Broker-Assign" if decision.autonomous else "Human-Reviewer",
             )
         run = app.state.pipeline.advance(ticket_id, decision=decision)
@@ -739,9 +741,10 @@ async def review_manual_ticket(ticket_id: str, body: ManualReview) -> dict[str, 
             })
         else:
             interpretation = mask_value(await interpret_review_feedback(safe_note, stage))
+        # A rate limit is treated like any other provider error: without an explicit
+        # severity correction, the triage revision waits for the reviewer to clarify.
         if (stage == "triage" and triage_revision.get("provider") == "rules_fallback"
-                and not triage_revision.get("reviewer_override")
-                and not triage_revision.get("rate_limited")):
+                and not triage_revision.get("reviewer_override")):
             interpretation["needs_clarification"] = True
             interpretation["clarification_question"] = (
                 "Triage could not interpret this change because OpenRouter is unavailable "
@@ -794,6 +797,7 @@ async def review_manual_ticket(ticket_id: str, body: ManualReview) -> dict[str, 
                 "severity_model": triage.get("model"),
                 "severity_preferred_model": triage.get("preferred_model"),
                 "severity_fallback_used": triage.get("fallback_used", False),
+                "severity_model_fallback_reason": triage.get("model_fallback_reason"),
                 "severity_cues": triage["matched_cues"],
             })
             _update_ticket_severity(ticket_id, record["severity"])

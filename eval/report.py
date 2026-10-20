@@ -11,6 +11,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
+ARMS = ("A0", "A1", "A2", "A3")
+
 
 def _read_csv(path: Path) -> list[dict[str, str]]:
     with path.open(newline="", encoding="utf-8") as handle:
@@ -22,21 +24,26 @@ def build_report(result_dir: Path) -> None:
     summary = _read_csv(result_dir / "summary.csv")
     tickets = _read_csv(result_dir / "per_ticket.csv")
     config = json.loads((result_dir / "config.json").read_text(encoding="utf-8"))
+    seeds = config["seeds"]
+    tickets_per_arm = len(seeds) * int(config["tickets_per_seed"])
     lines = [
         "# BAB 9.4 — Four-arm evaluation", "",
-        f"Dataset version: `{config['dataset_version']}`; fixed seed 42; identical tickets are passed to all arms.",
+        f"Dataset version: `{config['dataset_version']}`; fixed seeds {', '.join(str(seed) for seed in seeds)}; "
+        f"{config['tickets_per_seed']} tickets per seed, {tickets_per_arm} per arm; identical tickets are passed to all arms.",
         "Wall-clock/CPU/memory values are observations on this host. LLM tokens are character-based estimates;",
         "network bytes use the ACL/mobile bundle serializers but do not include transport framing. DORA values are simulated.",
         "Severity ROC uses the chronological 30% holdout and a TF-IDF + Platt-calibrated LinearSVC.", "",
-        "| Arm | Approach | Tickets | Mean time (s) | P95 time (s) | Mean bytes | Messages | Token estimate | Macro-F1 | NAPFD | Rollback |",
+        "| Arm | Approach | Tickets | Mean time (ms) | P95 time (ms) | Mean bytes | Messages | Token estimate | Macro-F1 | NAPFD | Rollback |",
         "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in summary:
         lines.append("| {arm} | {arm_description} | {ticket_count} | {wall_time_mean_s} | {wall_time_p95_s} | {network_bytes_mean} | {messages_mean} | {llm_tokens_estimated_mean} | {macro_f1_severity} | {napfd_mean} | {rollback_rate} |".format(**{
             **row,
+            # Per-ticket times are fractions of a millisecond, so seconds would round to 0.0001.
+            **{key: f"{float(row[key]) * 1000:.3f}" for key in ("wall_time_mean_s", "wall_time_p95_s")},
             **{key: f"{float(row[key]):.4f}" for key in
-               ("wall_time_mean_s", "wall_time_p95_s", "network_bytes_mean", "messages_mean",
-                "llm_tokens_estimated_mean", "macro_f1_severity", "napfd_mean", "rollback_rate")},
+               ("network_bytes_mean", "messages_mean", "llm_tokens_estimated_mean",
+                "macro_f1_severity", "napfd_mean", "rollback_rate")},
         }))
     lines.extend(["", "## DORA-style metrics", "",
                   "| Arm | Deployments/day | Mean lead time (h) | Recovery (h) | Change failure rate | Rework rate |",
@@ -45,8 +52,25 @@ def build_report(result_dir: Path) -> None:
         keys = ("deployment_frequency_per_day", "lead_time_hours_mean",
                 "failed_deployment_recovery_hours_mean", "change_failure_rate", "rework_rate")
         lines.append(f"| {row['arm']} | " + " | ".join(f"{float(row[key]):.4f}" for key in keys) + " |")
+    stats_path = result_dir / "statistical_tests.csv"
+    if stats_path.is_file():
+        tests = _read_csv(stats_path)
+        lines.extend(["", f"## Statistical tests (one paired block per seed, alpha = {config['alpha']})", "",
+                      "| Metric | Friedman chi-square | Friedman p | Wilcoxon pairs significant after Holm |",
+                      "|---|---:|---:|---:|"])
+        for row in tests:
+            if row["test"] != "friedman":
+                continue
+            pairs = [test for test in tests
+                     if test["metric"] == row["metric"] and test["test"] == "wilcoxon_signed_rank"]
+            significant = sum(test["significant_holm"] == "True" for test in pairs)
+            lines.append(f"| {row['metric']} | {float(row['statistic']):.4f} | {float(row['p_value']):.4f} "
+                         f"| {significant} of {len(pairs)} |")
+        stats_note = "See `statistical_tests.csv` for paired Wilcoxon, Friedman/Nemenyi, Cliff's delta, and Holm-adjusted results."
+    else:
+        stats_note = "Paired statistical tests need at least two seeds, so this run is descriptive only."
     lines.extend(["", "Full per-ticket and per-stage measurements are in `per_ticket.csv` and `per_stage.csv`.",
-                  "Only seed 42 is used. Cross-seed consistency and statistical significance tests are not run.",
+                  stats_note,
                   "The synthetic policy-injection suite targets zero cases passed to the next stage.", ""])
     (result_dir / "BAB_9_4.md").write_text("\n".join(lines), encoding="utf-8")
 
@@ -54,7 +78,10 @@ def build_report(result_dir: Path) -> None:
     for row in tickets:
         by_arm.setdefault(row["arm"], []).append(float(row["total_wall_time_s"]))
     fig, ax = plt.subplots(figsize=(8, 4.5))
-    ax.boxplot([by_arm[arm] for arm in ("A0", "A1", "A2", "A3")], labels=("A0", "A1", "A2", "A3"), showfliers=False)
+    ax.boxplot([by_arm[arm] for arm in ARMS], showfliers=False)
+    # Name the boxes through the axis: boxplot(labels=) was removed in matplotlib 3.11 and
+    # boxplot(tick_labels=) only exists from 3.9, while set_xticks(labels=) works on both.
+    ax.set_xticks(range(1, len(ARMS) + 1), labels=ARMS)
     ax.set(title="Ticket wall time by evaluation arm", ylabel="Wall time (seconds)", xlabel="Arm")
     ax.grid(axis="y", alpha=0.25)
     fig.tight_layout()

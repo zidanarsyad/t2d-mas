@@ -32,13 +32,27 @@ _CUES = {
     ),
 }
 _PRIORITY = ("Critical", "High", "Medium", "Low")
+# Model settings in the order OpenRouter should try them, with their free defaults.
+_DEFAULT_MODELS = (
+    ("OPENROUTER_MODEL", "qwen/qwen3.8-27b:free"),
+    ("OPENROUTER_FALLBACK_MODEL", "inclusionai/ling-3.0-flash-sante:free"),
+)
 
 
-def _openrouter_models() -> list[str]:
-    preferred = os.getenv("OPENROUTER_MODEL", "qwen/qwen3.8-27b:free").strip() or "qwen/qwen3.8-27b:free"
-    fallback = os.getenv("OPENROUTER_FALLBACK_MODEL", "inclusionai/ling-3.0-flash-sante:free").strip()
-    fallback = fallback or "inclusionai/ling-3.0-flash-sante:free"
-    return list(dict.fromkeys(model for model in (preferred, fallback) if model))
+def _openrouter_models() -> tuple[list[str], str | None]:
+    """Return the models to send, plus the reason when a configured model was ignored.
+
+    Triage may only use free APIs, so an id without the ':free' suffix (a paid model)
+    is never sent: that setting is ignored and its default free model is used instead.
+    """
+    models, ignored = [], []
+    for variable, default in _DEFAULT_MODELS:
+        model = os.getenv(variable, "").strip() or default
+        if not model.endswith(":free"):
+            ignored.append(f"{variable}={model} is not a ':free' model; used {default} instead")
+            model = default
+        models.append(model)
+    return list(dict.fromkeys(models)), "; ".join(ignored) or None
 
 
 def _parse_json_response(content: Any) -> dict[str, Any]:
@@ -141,7 +155,7 @@ async def classify_ticket_with_llm(text: str, review_feedback: dict[str, Any] | 
     below the autonomy threshold so they always enter the existing human review gate.
     """
     fallback = classify_ticket(text)
-    models = _openrouter_models()
+    models, model_fallback_reason = _openrouter_models()
     preferred_model = models[0]
     api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
     if not api_key:
@@ -160,6 +174,7 @@ async def classify_ticket_with_llm(text: str, review_feedback: dict[str, Any] | 
             "preferred_model": preferred_model,
             "model": actual_model,
             "fallback_used": actual_model != preferred_model if actual_model else None,
+            "model_fallback_reason": model_fallback_reason,
         })
         return result
 
@@ -217,6 +232,7 @@ async def classify_ticket_with_llm(text: str, review_feedback: dict[str, Any] | 
                 "model": actual_model,
                 "preferred_model": preferred_model,
                 "fallback_used": actual_model != preferred_model,
+                "model_fallback_reason": model_fallback_reason,
                 "category": category,
                 "reviewer_override": reviewer_override,
                 "model_severity": model_severity if reviewer_override else None,
@@ -245,6 +261,8 @@ async def classify_ticket_with_llm(text: str, review_feedback: dict[str, Any] | 
             return response
     except httpx.HTTPStatusError as exc:
         result = failed(f"OpenRouter returned HTTP {exc.response.status_code}")
+        # Recorded for the audit only: a rate limit still returns the local rules result,
+        # which goes through the normal autonomy gate like any other fallback.
         result["rate_limited"] = exc.response.status_code == 429
         return result
     except httpx.TimeoutException:
@@ -278,8 +296,10 @@ async def interpret_review_feedback(note: str, stage: str) -> dict[str, Any]:
         fallback["fallback_reason"] = "OPENROUTER_API_KEY is unset"
         return fallback
 
-    models = _openrouter_models()
+    models, model_fallback_reason = _openrouter_models()
     preferred_model = models[0]
+    if model_fallback_reason:
+        fallback["model_fallback_reason"] = model_fallback_reason
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(15.0, connect=5.0)) as client:
             response = await client.post(
@@ -319,6 +339,7 @@ async def interpret_review_feedback(note: str, stage: str) -> dict[str, Any]:
                 "model": actual_model,
                 "preferred_model": preferred_model,
                 "fallback_used": actual_model != preferred_model,
+                "model_fallback_reason": model_fallback_reason,
             }
     except httpx.HTTPStatusError as exc:
         fallback["fallback_reason"] = f"OpenRouter returned HTTP {exc.response.status_code}"

@@ -20,7 +20,7 @@ flowchart LR
     API --> DB[(PostgreSQL + pgvector)]
     API --> GATE{Confidence and risk gate}
     GATE -->|pass| PIPE[9-stage ticket pipeline]
-    GATE -->|escalate| HUMAN[Approval inbox]
+    GATE -->|escalate| HUMAN[Human reviews]
     HUMAN -->|approved| PIPE
     PIPE --> STATIC[Static agents]
     PIPE --> MOBILE[Mobile agent runtime]
@@ -45,7 +45,7 @@ The system uses the autonomy rule `confidence >= tau AND risk <= risk_max`; othe
 | `rca/` | PyTorch Geometric service graph builder, GraphSAGE ranker, explanations, and baseline |
 | `envs/` | Gymnasium CI test-prioritization and canary-deployment environments; SB3 training/evaluation |
 | `eval/` | Four-arm benchmark, metrics, security injections, and BAB 9.4 report generator |
-| `frontend/` | React + Tailwind + Recharts delivery workspace with nine views, ticket conversations, review gates, and SSE updates |
+| `frontend/` | React + Tailwind + Recharts delivery workspace with ten views, ticket conversations, review gates, and SSE updates |
 | `docker-compose.yml` | Orchestrator, six demo nodes, Redis, and PostgreSQL/pgvector |
 
 Each module has its own README and `requirements.txt`. The root `requirements.txt` installs the full course-project stack, including the larger ML/RL dependencies. To keep installation smaller, install only the requirements for the module you plan to run.
@@ -137,7 +137,7 @@ The separate `triage/` package requires no API key. Interactive Broker-Triage us
 
 ## Reproducible evaluation
 
-The evaluation harness runs A0 (rule-based), A1 (single-agent), A2 (static MAS), and A3 (mobile MAS) over the same 100-ticket set using only seed 42. It writes a timestamped result folder containing configuration, per-ticket/per-stage CSVs, security injection results, descriptive summaries, BAB 9.4 Markdown, ROC data, and plots.
+The evaluation harness runs A0 (rule-based), A1 (single-agent), A2 (static MAS), and A3 (mobile MAS) over the same generated tickets: 100 per seed for seeds 42–46, so 500 per arm. It writes a timestamped result folder containing configuration, per-ticket/per-stage CSVs, security injection results, descriptive summaries, paired statistical tests (Wilcoxon, Friedman/Nemenyi, Cliff's delta, Holm-Bonferroni), BAB 9.4 Markdown, ROC data, and plots.
 
 With GNU Make:
 
@@ -180,7 +180,7 @@ python -m pytest envs/tests -q
 ## Known limitations
 
 - Several comparisons use synthetic tickets, failure labels, deployment outcomes, and dashboard data; results are for coursework, not operational claims.
-- Wall-clock, CPU, and memory measurements can vary by machine even with the fixed seed 42.
+- Wall-clock, CPU, and memory measurements can vary by machine even with fixed seeds.
 - The mobile runtime demonstrates signed bundles and container limits but does not provide a hardened isolation boundary for arbitrary code.
 - The interactive pipeline records a complete prototype trace, but investigation is heuristic, implementation only drafts a request, QA has no connected CI runner, and deployment/monitoring do not connect to production systems. The ML, graph RCA, and RL experiments remain separate modules rather than one composed production workflow.
 - The performance dashboard and conversation walkthrough are explicitly labeled examples. Ticket overview and human reviews use actual sandbox run state. Active runs are held in backend memory; persisted audit history survives a backend restart, but those old runs cannot be resumed.

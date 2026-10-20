@@ -7,7 +7,8 @@ const phases = [
     description: "Turn incoming feedback into a clear piece of work.",
     steps: [
       { title: "Intake", detail: "Capture the user's issue." },
-      { title: "Triage", detail: "Assess urgency; duplicate search remains a separate module.", gate: "Confirm the impact assessment" },
+      // Triage has no fixed checkpoint: it pauses only when the confidence/risk gate escalates.
+      { title: "Triage", detail: "Assess urgency; duplicate search remains a separate module.", gate: "Confirm the impact assessment", review: "Review if escalated" },
       { title: "Assignment", detail: "Choose the right team." },
       { title: "Investigation", detail: "Look for evidence and a likely cause." },
     ],
@@ -42,12 +43,12 @@ export default function OverviewPage({ onNavigate }) {
 
     <Panel className="overview-purpose">
       <span className="overview-purpose-icon"><Workflow size={20}/></span>
-      <div><small>WHAT THIS PROJECT DOES</small><b>One guided workflow, with people reviewing key decisions.</b><p>Specialist software agents help with the hand-offs from an incoming issue to a proposed release. A person reviews impact, the proposed change, and the release proposal.</p></div>
+      <div><small>WHAT THIS PROJECT DOES</small><b>One guided workflow, with people reviewing key decisions.</b><p>Specialist software agents help with the hand-offs from an incoming issue to a proposed release. A person always reviews the proposed change and the release proposal, and confirms the impact assessment when triage confidence is low or the risk is high.</p></div>
     </Panel>
 
     <div className="overview-facts">
       <Panel><span className="overview-fact-icon"><Workflow size={17}/></span><div><b>9 steps</b><small>From report intake through service monitoring</small></div></Panel>
-      <Panel><span className="overview-fact-icon"><ShieldCheck size={17}/></span><div><b>3 human reviews</b><small>Impact, proposed change, and release</small></div></Panel>
+      <Panel><span className="overview-fact-icon"><ShieldCheck size={17}/></span><div><b>2 human reviews</b><small>Proposed change and release, plus triage when escalated</small></div></Panel>
       <Panel><span className="overview-fact-icon"><CheckCircle2 size={17}/></span><div><b>Course prototype</b><small>Some checks and outcomes are simulated or drafted</small></div></Panel>
     </div>
 
@@ -58,7 +59,7 @@ export default function OverviewPage({ onNavigate }) {
         <ol className="overview-stage-flow">
           {phase.steps.map((step, stepIndex) => <li className="overview-stage-item" key={step.title}>
             <div className="overview-stage-card"><span>{String(phases.slice(0, phaseIndex).reduce((total, item) => total + item.steps.length, 0) + stepIndex + 1).padStart(2, "0")}</span><b>{step.title}</b><small>{step.detail}</small></div>
-            {step.gate && <div className="overview-checkpoint"><ShieldCheck size={13}/><span><b>Human review</b><small>{step.gate}</small></span></div>}
+            {step.gate && <div className="overview-checkpoint"><ShieldCheck size={13}/><span><b>{step.review || "Human review"}</b><small>{step.gate}</small></span></div>}
             {stepIndex < phase.steps.length - 1 && <ArrowRight className="overview-flow-arrow" size={16} aria-hidden="true"/>}
           </li>)}
         </ol>

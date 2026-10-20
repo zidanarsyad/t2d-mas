@@ -48,7 +48,7 @@ function ProcessVisualizations() {
         <small className="experiment-process-note">{process.note}</small>
       </Panel>)}
     </div>
-    <div className="experiment-governance-note"><b>Human approval stays in the design.</b><span>The prototype pauses for impact assessment, change review, and release approval. Repository merges and production releases are not connected.</span></div>
+    <div className="experiment-governance-note"><b>Human approval stays in the design.</b><span>The prototype always pauses for change review and release approval, and pauses at triage when confidence is low or risk is high. Repository merges and production releases are not connected.</span></div>
   </section>;
 }
 
@@ -91,7 +91,7 @@ export default function ExperimentsPage({ onNavigate }) {
     {!error && !loading && !runs.length && <Panel className="experiment-empty"><b>No saved comparison runs yet</b><span>Run the project's evaluation once to create results for this screen.</span></Panel>}
     {selected && <>
       <div className="experiment-toolbar"><label>Saved comparison<select value={runId} onChange={event => setRunId(event.target.value)}>{runs.map(run => <option key={run.run_id} value={run.run_id}>{run.run_id} · {run.dataset_version}</option>)}</select></label><span>Sample set <b>{selected.dataset_version}</b></span></div>
-      <div className="experiment-meta">{totalTickets} tickets per approach<span>·</span>Same tickets used for all four approaches</div>
+      <div className="experiment-meta">{totalTickets} tickets per approach{selected.seeds?.length > 1 && <> ({selected.seeds.length} generated sets of {selected.tickets_per_seed})</>}<span>·</span>Same tickets used for all four approaches</div>
       <div className="experiment-grid">{summaries.map(row => <Panel className={`experiment-card process-${row.arm.toLowerCase()}`} key={row.arm}>
         <div className="experiment-card-title"><span className={`experiment-arm arm-${row.arm.toLowerCase()}`}>{row.arm}</span><div><b>{row.arm_description}</b><small>{row.ticket_count} ticket evaluations</small></div></div>
         <div className="experiment-metrics">

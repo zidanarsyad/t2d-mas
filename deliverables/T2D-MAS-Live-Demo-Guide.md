@@ -1,6 +1,6 @@
 # T2D-MAS Live Demo Guide
 
-This walkthrough shows agent handoffs, worker bidding, three human checkpoints, and saved decisions. Allow 5–8 minutes. Investigation is heuristic; implementation, QA, release, and monitoring produce drafts or simulations. No repository, CI, production deployment, or live telemetry is connected.
+This walkthrough shows agent handoffs, worker bidding, human reviews, and saved decisions. Change review and release approval are fixed checkpoints. Triage pauses only when the autonomy gate escalates; the Critical sample issue always escalates, so the walkthrough meets three reviews. Allow 5–8 minutes. Investigation is heuristic; implementation, QA, release, and monitoring produce drafts or simulations. No repository, CI, production deployment, or live telemetry is connected.
 
 ## Prepare
 
@@ -44,7 +44,7 @@ At the change checkpoint, enter a reviewer name and `Add a regression check for 
 
 ### Optional supporting views
 
-**Meet the agents** explains Scout, Broker, Worker, and Security responsibilities and offers a signed Scout-Log migration against six configured nodes, using synthetic inputs and aggregate-only results. **Performance example** contains explicitly illustrative charts. **Experiment results** reads saved four-arm measurements: only seed 42, 100 tickets per approach. No cross-seed consistency or significance checks are run. Host timings are measured; deployment outcomes and DORA values are simulated.
+**Meet the agents** explains Scout, Broker, Worker, and Security responsibilities and offers a signed Scout-Log migration against six configured nodes, using synthetic inputs and aggregate-only results. **Performance example** contains explicitly illustrative charts. **Experiment results** reads saved four-arm measurements: five generated sets of 100 tickets (seeds 42–46), 500 tickets per approach. Each saved run also contains paired significance tests in `statistical_tests.csv`. Host timings are measured; deployment outcomes and DORA values are simulated.
 
 Export dialogs show the selected scope and a file preview, with download and copy options. Clipboard exports have been verified; physical download completion was not verified in the in-app browser.
 
@@ -56,4 +56,4 @@ Export dialogs show the selected scope and a file preview, with download and cop
 - **Run unavailable after restarting the backend:** inspect persisted history and start a new run; active state is held in backend memory.
 - **Stop services:** use Ctrl+C in the running terminals and `docker compose down`. Avoid `docker compose down -v` when retaining history and signing keys.
 
-The demo shows structured agent communication with people deciding at impact, change, and release checkpoints, while clearly identifying prototype outputs.
+The demo shows structured agent communication with people deciding at the change and release checkpoints, and at triage whenever the autonomy gate escalates, while clearly identifying prototype outputs.
