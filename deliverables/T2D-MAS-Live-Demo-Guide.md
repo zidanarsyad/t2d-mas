@@ -8,11 +8,145 @@ The audience sees:
 - the six human gates;
 - the feedback loop from monitoring back to triage.
 
-Parts 1 and 2 are the core. The other parts can be shortened or skipped.
+There are two ways to use it:
+- **For a session on mobile agents**, use the 10-minute *Mobile-agent demo* below. It centres on Scout-Log and ends with the questions to expect.
+- **For the full walk-through**, use Parts 1–8. Parts 1 and 2 are the core; the other parts can be shortened or skipped.
 
 Planning, implementation, QA, deployment and monitoring use seeded simulators. Every panel says
 whether its data is live, simulated or illustrative. No real repository, CI, cluster or telemetry
 is connected.
+
+## Mobile-agent demo (10 minutes)
+
+This version centres on Scout-Log, the one agent that really travels. Its signed analysis code
+goes to each data node, runs next to the logs, and brings back only a few aggregate numbers. It
+reuses pages from Parts 1, 2, 6 and 8, with more time on the mobile agent.
+
+### Get ready
+
+- Start the system as described in *Before you start* below, on a freshly restarted backend. If you rehearse, restart it again afterwards: a message that already ran comes back as a duplicate.
+- Leave `OPENROUTER_API_KEY` unset, so FB-001 behaves the same every time.
+- Record a short screen capture of steps 2–4 as a backup. Without the backend, the Overview replay and the cost-model animation on **Agents** still play; the live trip and **Run a ticket** do not.
+
+With only 5 minutes, do steps 2 and 3, and say that the same trip runs inside every ticket's
+investigation.
+
+### 1. Context (1 minute)
+
+**Do**
+1. Open **Overview** and point at **Scout-Log (mobile)** in the diagram.
+
+**Say**
+- Nine agents take a user complaint to a monitored release.
+- Today's focus is the investigation step. There the agent goes to the data, instead of the data coming to a central server.
+
+### 2. The idea: static pull or mobile agent (3 minutes)
+
+**Do**
+1. Open **Agents** and select the **Scout-Log** card. Point at its five steps.
+2. Under *The mobile agent at work*, select **Static pull**, then **Play the trip**.
+3. Select **Mobile agent**, then **Play the trip**. The phases are Sign, Dispatch, Run on the node and Return.
+
+**Say**
+- Like every agent, Scout-Log has five steps. It reads how much log data each node holds, carries its state inside the signed bundle, decides with the migration rule, runs the analysis in the node's sandbox, and returns only allowlisted aggregates.
+- Static pull: the central server downloads 6 × 1,365 MB = 8,190 MB of raw logs, personal data included. That takes about 10 min 55 s.
+- Mobile agent: 84 MB in about 27 s. That is 98.97% fewer bytes and about 24× faster.
+- These figures come from the report's cost model for the flash-sale incident, not from a measurement. The model assumes a 100 Mbit/s link, a 12 MB bundle, a 2 MB result and 20 s of analysis on all nodes in parallel.
+- The migration rule ships the agent only when a node holds more than (A + R) × k = (12 + 2) × 3 = 42 MB of logs. The break-even is 14 MB; k = 3 is a safety margin.
+
+### 3. The live trip (2 minutes)
+
+**Do**
+1. Select **Investigate on the real nodes**. The panel is now labelled *Live trip (in-process nodes)*.
+
+**Say**
+- Nodes 1–5: *agent ran on the node; 2.11 KB out*, about 150 B back. The 2.11 KB is the whole bundle: the analysis program's source code, its state (seed, product area, a 30-minute window) and an Ed25519 signature.
+- node-6 holds only 30 MB, below 42 MB, so the node's own exporter answers (208 B). The agent decides per node.
+- *6 of 6 nodes answered. 11.5 KB moved; 6,855 MB of raw logs stayed on the nodes.*
+- Each node checks the signature first. Only the orchestrator holds the private key; the nodes have the public key.
+- The code then runs in a separate, isolated Python process: standard library only, a 20-second limit, never written to disk.
+- Only allowlisted aggregate fields may leave. The node checks them, and the orchestrator checks again. The node's logs contain customer e-mail addresses, and none come back.
+- Every migration is written to the audit log: authorized, then completed or failed.
+
+### 4. Inside a real ticket (3 minutes)
+
+**Do**
+1. Open **Run a ticket**, select **Flash-sale burst**, then the **Crash reporter** message from 20:06 WIB (FB-001). Select **Start this ticket**.
+2. Select **Run until a human is needed**. At *Confirm the impact assessment*, type your name and a reason, then select **Approve**.
+3. Select **Run until a human is needed** again and watch the journey panel.
+4. When the run stops at **Review the proposed change**, select the **Investigation** stage.
+
+**Say**
+- At the impact gate: the ticket is Critical, so its risk is 1.00, above R_max 0.60. A person must confirm.
+- In the investigation, the winning squad sent Scout-Log to all six nodes. About 12 KB moved, and the raw logs stayed on the nodes.
+- The aggregates become z-scores against each service's SLO baseline. One GraphSAGE-mean pass over the call chain ranks payment-db first.
+- Stop here. The merge and the full release always wait for a person (Part 2 shows the rest of the run).
+
+### 5. Honest evidence (1 minute)
+
+**Do**
+1. Open **Experiment results** and compare *Data sent per ticket* for A2 and A3. The deck's A2-vs-A3 slide shows the same numbers.
+
+**Say**
+- In the benchmark, A3 (mobile) sent more data than A2 (static): 4.16 KB against 3.56 KB per ticket. The synthetic tickets carry almost no log data, so the bundle is pure overhead. That is what the break-even rule predicts.
+- All 20 injected policy violations were blocked, including personal data leaving a node.
+
+### Questions to expect
+
+**Is it really a mobile agent, or just remote execution?**
+Scout-Log carries its own code and state to the data and decides per node whether moving pays off.
+Each trip is one hop, in the master–slave pattern: Worker-Investigate sends Scout-Log out and
+collects the results. A multi-hop itinerary, node to node with partial results, would be the next
+step. The node's exporter is the client–server alternative: it answers only the questions its
+owner installed in advance.
+
+**Weak or strong mobility?**
+Weak. The code and its data state move, and execution starts fresh on the node. Strong mobility
+would also move the running program's execution state, which standard Python cannot serialize.
+Aglets, a classic Java platform, also uses weak mobility.
+
+**The bundle is 2 KB. Why does the rule assume 12 MB?**
+The policy uses the report's planning sizes, so the live decisions match the report's worked
+example. With the real 2 KB bundle, the agent would move to every node, node-6 included.
+
+**What protects a node from a bad agent?**
+The signature check, the isolated process with its time limit, and the egress allowlist (step 3).
+A unit test alters a signed bundle and checks that verification fails.
+
+**What protects the agent from a dishonest node?**
+Nothing yet. The prototype assumes the data nodes are the company's own servers. Known defences,
+such as sending several agents and voting, signed partial results or trusted hardware, are future
+work.
+
+**What if a node is down?**
+That visit is marked failed, and the investigation continues with the nodes that answered.
+
+**Are the nodes real?**
+In local mode the six nodes are the real node program, running inside the backend process and
+reached through in-memory HTTP. The signing, the isolated process and the allowlist are the real
+code. With Docker, each node is its own container. The node logs are seeded test data, 600 rows
+per node; 1,365 MB is the report's nominal size.
+
+**Worker-Impl and Scout-Monitor are labelled Mobile. Do they move?**
+Not in this prototype. The report designs them as mobile, but here they run as simulators. Only
+Scout-Log travels.
+
+**Why mobile agents at all?**
+Lange and Oshima's seven reasons, checked against this prototype:
+- Reduce network load: yes.
+- Overcome network latency: partly. One round trip per node replaces streaming the logs.
+- Encapsulate protocols: yes. The bundle brings its own analysis.
+- Execute asynchronously and autonomously: partly. The orchestrator waits for each reply.
+- Adapt dynamically: yes. The rule is applied per node.
+- Run on heterogeneous hosts: partly. Every node needs Python.
+- Be robust and fault-tolerant: partly. A failed node is skipped.
+
+### Say it precisely
+
+- The 98.97% and 24× figures come from the cost model; they were not measured.
+- In local mode the nodes run inside the backend process, not on separate machines.
+- The isolated process is a safeguard, not a hardened sandbox. The signature decides which code runs.
+- Only Scout-Log migrates.
 
 ## Before you start
 
@@ -222,6 +356,8 @@ linked as a duplicate.
 - The merge and the full deploy each appear twice: *authorized to execute*, then *executed*.
 
 ## Part 6: Agents, the mobile agent
+
+The *Mobile-agent demo* at the top of this guide covers this page in more depth.
 
 **Do**
 1. Open **Agents**. Select an agent to see its five steps from its latest real run.

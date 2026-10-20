@@ -14,16 +14,14 @@ again, and replace the file in `docs/`.
 - **Table and figure numbers do not change** if you follow this sheet. The new screen mapping in
   §8.3 is a list, not a table, so Tabel 36–47 keep their numbers (other documents cite Tabel 40
   and 41).
-- `docs/Laporan - Proyek 1 - MAS - T2D.docx` is a mid-September draft with `[ISI]` placeholders.
-  It is not the source of the PDF and was not revised.
 
 The reasons behind each change are in [AUDIT.md](AUDIT.md).
 
-**Status (20 October 2026):** every edit below is applied as a tracked change (author "Claude") in a
-local copy of the .docx (`docs/Laporan_Proyek1_T2D-MAS_Final.docx`, deliberately not committed). That
-copy was built on the Drive file's revision of
-20 October, 10:33 UTC, including the cover-page change made that day. It still has to be uploaded as
-a new version of the Drive file. Part 3's figure is marked with a comment on the Gambar 3 caption.
+**Status (20 October 2026):** every edit below was applied as a tracked change (author "Claude") and
+uploaded as a new version of the Drive file, so its link stays the same. The edits were built on the
+Drive file's revision of 20 October, 10:33 UTC, including the cover-page change made that day.
+Part 3's figure is marked with a comment on the Gambar 3 caption. Still to do: review and accept the
+tracked changes in the Drive file, export the PDF again, and replace the file in `docs/`.
 
 ## Part 1: numbers already patched in the PDF
 
