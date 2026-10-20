@@ -1,79 +1,74 @@
-# T2D-MAS: project alignment and stakeholder UX
+# T2D-MAS: dashboard and project alignment
 
-The design follows the supplied Project 1 idea and final report: nine specialist delivery stages, Scout/Broker/Worker/Security roles, Contract Net assignment, confidence-and-risk escalation, human change/release gates, auditable results, and a monitoring feedback loop. The documents are reference requirements; their embedded implementation instructions are not separate user authorization.
+The report (§8.3, B.6) asks for five screens built on one principle: "one screen answers one
+question", so that people never have to guess what the agents are doing. The dashboard keeps
+that principle. It has eight views, each opening with one line on *what you see* and *why it
+matters*, and adds animations that show the process instead of describing it. Technical names
+such as performatives and JSON stay one click away.
 
-The original report's five monitoring screens remain represented. The additional ticket workspace, conversation view, history, and experiment results make the prototype demonstrable to people who do not know the protocol or implementation details.
+## Report screens → dashboard views
 
-## Screen questions and wireframes
+| Report screen (§8.3) | Required elements | Dashboard view |
+|---|---|---|
+| 1 Pipeline overview | Nine-column board; ID, severity colour, current agent, time in stage, "waiting for a human" badge | **Tickets → Board**: nine columns with all of these. Severity, status and gates always show a word and an icon, not colour alone. |
+| 2 Agent status | Role, static/mobile icon, status, load, migration path, bytes moved | **Agents**: family, static/mobile, live load and current tickets, and the five components. The **Investigate on the real nodes** trip animates the migration path with a byte counter (report T36). |
+| 3 Decision trace | Per ticket: agent, input, output, confidence, τ and R_max, gate result, approver, expandable evidence | **Decision trace**: a seekable animated flow and a timeline, with each gate's values shown against its limits; JSON export. |
+| 4 Approval inbox | Sorted by risk × waiting time; evidence; approve, or reject with a reason | **Human reviews**: sorted by severity risk × minutes waiting. Each gate shows value against limit. Approve / Request changes / Reject and stop, with a reason always required. The six-gate table is on the same page. |
+| 5 Performance report | DORA and agent metrics, 30-day charts, Static/Mobile toggle, CSV export | **Monitoring**: telemetry playback with the SLO line, alert → follow-up ticket, the canary bar, and the illustrative DORA report with the Static/Mobile comparison and CSV. |
+| (added) | Explain the system to a first-time viewer | **Overview**: an animated replay of the TCK-1042 flash-sale story and an idea-vs-prototype table. |
+| (added) | Let a person try one ticket | **Run a ticket**: the natural-language feedback inbox, a live animated journey, each agent's five steps, and review at the gate. |
+| (added) | Show what the evaluation measured | **Experiment results**: A0–A3 results (each metric marked measured, scored or simulated) and sample evaluation tickets. |
 
-| Screen | Stakeholder question | Data source |
-| --- | --- | --- |
-| Project overview | What is the project and where are the human checkpoints? | Illustrated guide, clearly labeled prototype scope |
-| Ticket overview | Where is the work, and what is blocked? | Current sandbox snapshots; counts derived from their statuses |
-| Agent conversations | Who shared what, and why was a worker selected? | Ticket-filtered Redis history + SSE, or an explicitly selected example |
-| Run a ticket | What will happen next, and what did each agent produce? | Current snapshot, shared outputs, and reviews |
-| Human reviews | What needs my decision, and what evidence supports it? | Actual paused sandbox runs; risk × review waiting time ordering |
-| Decision trail | Why was this decision made? | Selected ticket's published messages and policy context |
-| Ticket history | What happened before? | PostgreSQL inputs/audit events; separate synthetic benchmark sample |
-| Meet the agents | What does each specialist do, and how does mobility work? | Role catalog, current stage assignments, signed mobile demo |
-| Performance example | How could we compare delivery and communication costs? | Explicitly illustrative metrics and report assumptions |
-| Experiment results | What was measured in the benchmark? | Saved A0–A3 result bundles |
+The other UI requirements from B.6 are covered too:
+- server-sent events, so the timeline "feels alive";
+- light and dark mode;
+- three text sizes;
+- colour is never the only signal.
 
-### Conversation-first wireframe
+## Animations
 
-```text
-[Conversation selector] [Example / Recorded] [Play example / Start ticket]
-[Ticket context: source, message count, participant count]
-[Nine stage journey: current exchange highlighted]
----------------------------------------------------------------
-| Selected handoff                         | Conversation       |
-| Sender -> recipient(s)                   | Chronological      |
-| What this message means                  | message list       |
-| Shared result / worker bid comparison    | Selected message   |
-| Technical details (collapsed)            | remains selected   |
----------------------------------------------------------------
-[Shared reference] [Human gates] [Monitoring -> triage loop]
-```
+- **Pipeline flow** (Overview, Run a ticket, Decision trace). A ticket marker moves through the nine stages. Message envelopes travel between agents, labelled with what they mean ("Call for bids", "Bid", "Result shared"). Contract Net bids fan out and come back, and the winner is highlighted. Gate shields pulse while waiting for a person. A feedback-loop arc runs from monitoring back to triage.
+- **Scout-Log trip** (Agents, and Run a ticket's investigation). Signed bundles go out to six nodes, and aggregates come back with live byte counts. The Static pull vs Mobile agent comparison uses the report's cost model.
+- **Monitoring board** (Monitoring). An hour of telemetry plays back. The payment-db anomaly pulses, and its alert becomes a ticket that lands at feedback capture. The canary steps from 5% to 100%.
 
-The explanation uses “request worker bids,” “submit a bid,” “select a worker,” and “share a result.” Protocol names, message IDs, correlation IDs, and JSON remain available in the details disclosure. Bid scores agree with the weighted formula; the example uses the report's 0.63/0.69/0.66 calculation.
+The player controls are play, pause, step, speed and a slider.
 
-### Ticket workspace wireframe
+With *prefers-reduced-motion*:
+- nothing starts by itself;
+- moving parts show their end state;
+- counters jump to their value;
+- every step stays reachable.
 
-```text
-[Original issue] [Severity] [Run status]
-[Completed stages] [Next step] [Run until review] [See conversation]
----------------------------------------------------------------
-| Nine specialist stages       | Selected stage's purpose      |
-| Completed / current / next   | Human-readable shared result  |
-| Select a stage               | Technical data (collapsed)    |
----------------------------------------------------------------
-[Human checkpoint: proposal, reviewer name, required note]
-[Stop run] [Request changes] [Accept proposal]
-[Previous human decisions and agent interpretations]
-```
+Each animation also has a text version, and captions are read out per step.
 
-The overview uses a three-column journey grid instead of a permanently overflowing nine-column board. Mobile layouts stack panels and use a drawer with full navigation labels. Color is accompanied by stage numbers, status words, and icons. Native dialogs trap focus for help/search; reduced-motion preferences suppress animations. Text sizes and themes are adjustable.
+## Live, simulated and replay
 
-## Implementation boundaries
+Every panel says where its data comes from:
+- **Live:** the running backend.
+- **Simulated by backend:** seeded simulators for CI, deploys and telemetry.
+- **Replay · illustrative:** recorded example data.
+- **Report model:** the cost model in report §5.4.3.
+- **Recorded:** the saved audit log.
 
-Implemented in the interactive prototype: input masking, explainable severity assessment, policy gates, worker bids/selection, specialist draft results, human acceptance/revision/rejection, timestamped message recovery, persisted audit history, and the monitoring-to-triage handoff. The signed Scout-Log mobile demo executes on container nodes with synthetic inputs and allowlisted aggregate results.
+Without the backend, the dashboard switches to replay mode instead of failing.
 
-The report's semantic duplicate detection, trained severity model, graph root-cause model, and RL test/release policies remain separate experiment modules. The interactive investigation is heuristic, implementation produces a request rather than a code patch, QA does not execute CI tests, and deployment/monitoring do not operate production systems. The interface states these boundaries at the result and review points. Mobile benefits on large data are design assumptions; benchmark results may show higher mobile overhead on small datasets.
+## Boundaries the interface states
 
-Active run state belongs to the backend process. Browser navigation and refresh recover it; a backend restart retains persisted audit history but does not restore resumable state. Messages are recovered from the latest 500 Redis entries, without consuming the worker queue. The report's general 30-second undo window is not implemented; draft results are revised through explicit reviewer feedback and autonomous production actions are not executed.
+- **What is real and what is simulated:**
+  - Triage, assignment, gates, the audit log, the node trips, signing and egress checks are real.
+  - Planning, the draft PR, CI, deployment and telemetry are simulated.
+- **No undo window:** the report's 30-second undo for autonomous actions is not implemented.
+- **Local mode:** active runs live in memory; Docker mode keeps the audit history in PostgreSQL.
+- **Unauthenticated reviewers:** a reviewer is a typed name, not a logged-in identity.
 
 ## Verification
 
-Regression checks cover shared review state, repeated advance while paused, concurrent double-review prevention, meaningful input validation, chronological non-consuming message history, bid-score consistency, example stage coverage, and the feedback-loop recipient. The existing module suites cover the orchestrator, masking, policy gates, mobile signature/egress behavior, triage numerics, and optional model/environment checks. Browser and live API checks exercise actual Docker-backed runs, reviewer changes, approvals, rejection, history, conversation recovery, signed execution on all six nodes, and desktop/mobile layouts, including dark mode and extra-large text.
+- **Frontend:** 63 tests, including guards for one `fetch` site, no threshold literals and no dead CSS, plus the production build.
+- **Backend:** 73 tests.
+- **Live browser walk:** done by the dashboard session against a local-mode backend.
+  - Every gate type, including the duplicate link and the secret-scan redraft.
+  - The Scout-Log trip on the real nodes.
+  - Alert → follow-up ticket, and the regression loop.
+  - Saved runs, experiments, dark mode and a 375 px layout, with no console errors.
 
-Export dialogs show the selected scope, offer downloads and copying, and disclose a file preview. Clipboard verification confirmed that the CSV contains exactly seven selected daily rows and the JSON contains only the selected ticket's seven recorded messages, including its stopped status. The in-app browser's download-event capture timed out, so physical download completion is not verified in that browser. The exporter keeps the file URL available while a browser starts its download; the verified copy option provides an alternative.
-
-An idle SSE heartbeat preserves the subscriber instead of cancelling its async generator. A regression test and a live frontend-proxy check both confirm that a new ticket event arrives after the heartbeat. Recorded gate decisions nested inside stage output receive the same plain-language explanation as the illustrative walkthrough.
-
-Final validation: 35 Python tests and 4 frontend tests passed; the production build passed. Three optional ML/RL checks were skipped because gymnasium or torch-geometric is unavailable in the local test environment. The live nine-stage run visited the triage escalation and the change and release gates; signed migration succeeded on all six nodes. Change and release are fixed checkpoints; triage pauses only when the autonomy gate escalates, as it does for the Critical sample issue.
-
-## Seeded results and navigation
-
-The four-arm evaluation follows the report's design: seeds 42–46, 100 generated tickets per seed, 500 per arm, with paired statistical tests. A seed-42-only setting, applied on 2026-09-30 by trimming the saved bundles with a script outside the repository, was reverted on 2026-10-20. The bundle the report and deck cite, `results/20260930T020846305626`, was restored to its original five-seed files, and the pre-fix `results/20260929T145202896406Z` bundle was removed. The results screen states the simulation boundaries and the number of generated ticket sets; seed values stay in the technical configuration. The desktop sidebar sticks to the viewport top, its brand remains visible during internal scrolling, and the tab has a matching workflow icon.
-
-A fresh five-seed run reproduced every non-timing column of the restored bundle across 2,000 ticket rows and 12,000 stage rows. Earlier checks found no horizontal page overflow in the browser for desktop scrolling, the sticky sidebar header, the tablet drawer, or the phone layout.
+See `docs/AUDIT.md` for the comparison with the original idea.

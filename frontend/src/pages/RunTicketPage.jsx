@@ -51,8 +51,10 @@ function StartTicket({ workspace, onSelectTicket }) {
   const [showReplay, setShowReplay] = useState(false);
 
   // The live inbox when the backend has it; otherwise the offline sample inbox.
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let active = true;
+    let retry;
     setInbox((value) => ({ ...value, loading: true }));
     api
       .feedbackInbox({ seed, count: 10, scenario })
@@ -61,11 +63,15 @@ function StartTicket({ workspace, onSelectTicket }) {
         if (!active) return;
         const items = scenario === "flash_sale" ? mockFeedback.filter(isFlashSale) : mockFeedback;
         setInbox({ items, source: "replay", loading: false, note: isUnavailable(err) ? "" : err.message });
+        // The backend is up but the request failed (for example while it was busy):
+        // try again a few times instead of staying on the offline sample until a reload.
+        if (live && attempt < 3) retry = setTimeout(() => setAttempt((count) => count + 1), 1500);
       });
     return () => {
       active = false;
+      clearTimeout(retry);
     };
-  }, [scenario, seed, mode]);
+  }, [scenario, seed, mode, attempt, live]);
 
   const choose = (item) => {
     setSelected(item);

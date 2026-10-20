@@ -1,3 +1,4 @@
+import { Agent } from "node:http";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
@@ -13,5 +14,8 @@ export default defineConfig({
     target: process.env.VITE_API_TARGET || "http://localhost:8000",
     changeOrigin: true,
     rewrite: (path) => path.replace(/^\/api/, ""),
+    // A fresh connection per request: Node 19+ reuses idle sockets by default, but uvicorn
+    // closes them after 5 s, and reusing a closed one fails the request with a 500.
+    agent: new Agent({ keepAlive: false }),
   } } },
 });
