@@ -7,3 +7,6 @@ cryptography>=43,<47
 
 # Investigation ranks suspects with rca/numerics.py (the report's GraphSAGE example).
 numpy>=1.26
+
+# Tests: python -m pytest agents/tests
+pytest>=8.0

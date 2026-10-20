@@ -6,13 +6,15 @@ move a ticket from user feedback to a monitored release, and where people decide
 
 ## Run it
 
+Set up once as described in the [main README](../README.md#run-it-no-docker-needed) (Node.js 22
+or newer), then:
+
 ```powershell
 # Backend (repository root, local mode: memory storage, memory bus, in-process nodes)
-python -m uvicorn agents.app:app --port 8000
+.venv\Scripts\python -m uvicorn agents.app:app --port 8000
 
 # Dashboard
 cd frontend
-npm install
 npm run dev
 ```
 
@@ -24,9 +26,6 @@ serves the dashboard on `http://localhost:5173`. Without the backend the dashboa
 npm test        # node --test "src/**/*.test.js"
 npm run build   # production build in dist/
 ```
-
-In the Claude desktop app, `.claude/launch.json` at the repository root starts both servers
-(`backend` and `dashboard`).
 
 Good to know for a demo:
 

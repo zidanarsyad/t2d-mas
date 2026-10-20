@@ -50,20 +50,51 @@ The four project rules hold throughout:
 
 ## Run it (no Docker needed)
 
-You need Python 3.11+ and Node 20.19+ (Vite 7 needs it). Use two terminals, both starting from the repository root.
+You need Git, **Python 3.11–3.14** and **Node.js 22 or newer**. On a fresh clone (Windows, 20 October 2026), the backend tests passed on Python 3.11, 3.12 and 3.14, and the dashboard tests and build on Node.js 22 and 24.
+
+**Set up once.** On Windows, use a short folder outside OneDrive, such as `C:\dev\t2d-mas`: Python packages fail when a path passes 260 characters, and OneDrive syncing locks files in `.venv` and `node_modules`. The commands below clone the repository, create a virtual environment in `.venv`, install the backend into it and install the dashboard. You never need to activate the environment.
+
+Windows (PowerShell):
 
 ```powershell
-python -m pip install -r agents/requirements.txt
-python -m uvicorn agents.app:app --port 8000
+git clone https://github.com/zidanarsyad/t2d-mas.git C:\dev\t2d-mas
+cd C:\dev\t2d-mas
+python -m venv .venv
+.venv\Scripts\python -m pip install -r agents/requirements.txt
+cd frontend; npm ci; cd ..
+```
+
+macOS or Linux:
+
+```bash
+git clone https://github.com/zidanarsyad/t2d-mas.git ~/t2d-mas
+cd ~/t2d-mas
+python3 -m venv .venv
+.venv/bin/python -m pip install -r agents/requirements.txt
+cd frontend && npm ci && cd ..
+```
+
+**Start it.** Use two terminals at the repository root (`C:\dev\t2d-mas` above). On macOS or Linux, write `.venv/bin/python` instead of `.venv\Scripts\python`.
+
+```powershell
+.venv\Scripts\python -m uvicorn agents.app:app --port 8000
 ```
 
 ```powershell
 cd frontend
-npm install
 npm run dev
 ```
 
-Open the address Vite prints (usually http://localhost:5173).
+Open http://localhost:5173. The badge at the top right says **Live · local** when the dashboard reaches the backend, and **Replay mode** when it does not.
+
+**After `git pull`**, run the install commands again (`pip install` and `npm ci`) in case the dependencies changed. Stop the dashboard first: Windows cannot replace files that are in use.
+
+**If something goes wrong:**
+- *`python` is not recognized (Windows):* install Python from python.org, or write `py` instead of `python` in the first command.
+- *`DLL load failed … The filename or extension is too long` (Windows):* the folder path is too long. Clone into a shorter folder, such as `C:\dev\t2d-mas`.
+- *Port 8000 or 5173 is in use:* see Troubleshooting in the [live demo guide](deliverables/T2D-MAS-Live-Demo-Guide.md#troubleshooting).
+- *Windows asks whether Node.js may use the network:* either answer works; the dashboard only needs this computer.
+- *npm warns about an unsupported engine, or Vite does not start:* update Node.js to version 22 or newer.
 
 **Local mode.** Without Docker the backend runs everything in one process: memory storage, an in-memory message bus and six in-process data nodes. The dashboard labels these parts as local, and everything resets when you stop the server. The dashboard's replay views also work with the backend stopped.
 
@@ -111,9 +142,13 @@ Results land in a timestamped folder: per-ticket and per-stage CSVs, statistical
 ## Checks
 
 ```powershell
-python -m pytest agents/tests triage/tests rca/tests envs/tests -q   # or: make test
+.venv\Scripts\python -m pytest agents/tests -q
 cd frontend; npm test; npm run build
 ```
+
+`agents/requirements.txt` includes pytest. The offline modules' tests (`triage/`, `rca/`, `envs/`) need the full `requirements.txt`, which includes PyTorch. Run them with `python -m pytest agents/tests triage/tests rca/tests envs/tests -q` or `make test`.
+
+On GitHub, every push runs the backend tests (Python 3.11 and 3.14) and the dashboard tests and build (Node.js 22) on Windows and Linux. See [`.github/workflows/checks.yml`](.github/workflows/checks.yml).
 
 ## Words used in the dashboard
 

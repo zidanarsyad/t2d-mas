@@ -7,11 +7,12 @@ See [AGENT_CATALOG.md](AGENT_CATALOG.md) for what each agent does and what is re
 
 ## Run it
 
-**Without Docker (local mode).** One command, from the repository root:
+**Without Docker (local mode).** After the one-time setup in the
+[main README](../README.md#run-it-no-docker-needed), one command from the repository root (on
+macOS or Linux, write `.venv/bin/python`):
 
 ```powershell
-python -m pip install -r agents/requirements.txt
-python -m uvicorn agents.app:app --port 8000
+.venv\Scripts\python -m uvicorn agents.app:app --port 8000
 ```
 
 Local mode keeps tickets and the audit log in memory, uses an in-memory message bus, and runs
@@ -26,11 +27,10 @@ code as in Docker. `GET /health` tells you which parts are local. Everything is 
 
 After a schema change, recreate the database volume once with `docker compose down -v`.
 
-**Tests:**
+**Tests** (pytest comes with `agents/requirements.txt`):
 
 ```powershell
-python -m pip install pytest
-python -m pytest agents/tests -q
+.venv\Scripts\python -m pytest agents/tests -q
 ```
 
 The tests always run in local mode. They never use a real OpenRouter key, even if `.env` holds one.

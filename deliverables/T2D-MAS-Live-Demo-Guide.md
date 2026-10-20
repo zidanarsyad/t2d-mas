@@ -150,21 +150,19 @@ Lange and Oshima's seven reasons, checked against this prototype:
 
 ## Before you start
 
-Start the backend and the dashboard in local mode (no Docker). Use two terminals in the
-repository root:
+Set up once as described in the [README](../README.md#run-it-no-docker-needed). Then start the
+backend and the dashboard in local mode (no Docker), in two terminals at the repository root:
 
 ```powershell
-python -m uvicorn agents.app:app --port 8000
+.venv\Scripts\python -m uvicorn agents.app:app --port 8000
 ```
 
 ```powershell
 cd frontend
-npm install
 npm run dev
 ```
 
-In the Claude desktop app, `.claude/launch.json` starts both (`backend` and `dashboard`).
-Open `http://localhost:5173`.
+On macOS or Linux, write `.venv/bin/python` in the first command. Open `http://localhost:5173`.
 
 Check these before the audience arrives:
 - The top bar says **Live · local**. Hover over it: memory storage, memory bus, in-process nodes, local rules for triage.
