@@ -1,39 +1,41 @@
 # Agent catalog
 
-This catalog maps the project's intended agents to their task, objective, capabilities, and current implementation status. The role split follows the project idea and report; the status column describes this repository today.
+Each agent follows the report's five components (§5.3.1): it **perceives** its input,
+**remembers** what it needs from the shared blackboard, **reasons** about a decision, **acts**
+through tools, and **reports** a result. Every stage output in the dashboard shows these five
+steps in plain language. The families follow the report: Scouts collect, Brokers decide where
+work goes, Workers do the work, and Security enforces policy.
 
-## Agent roles
-
-| Agent | Task and objective | Capabilities and expected output | Current implementation |
+| Stage | Agent (family, mobility) | What it does | Real or simulated |
 |---|---|---|---|
-| **Scout-Feedback** | Accept a report and normalize it into a consistent ticket. | Validate and normalize fields; produce a ticket record with source and intake time. | Manual sandbox trims text, masks common email/phone/token patterns, and records an intake event. No external tracker connector is configured. |
-| **Broker-Triage** | Classify the ticket and identify related work so the right response can be selected. | Rule/model severity score, category, duplicate candidates, evidence, and escalation decision. | Local rule-based severity classification is the default; OpenRouter proposals are optional and remain below the autonomy confidence threshold. The rule score is a heuristic, not a calibrated probability. Duplicate search is not wired into that path. |
-| **Broker-Assign** | Match work to a capable, available worker. | Contract Net CFP, proposals, utility comparison, and award/reject messages. | The manual ticket sandbox runs a deterministic Contract Net round with three local worker profiles. CFP, bids, award/reject routes, and winner utility are written to the audit history and live message stream. |
-| **Scout-Log** | Collect local runtime evidence while limiting data movement. | Filter and aggregate logs/metrics; return allowlisted evidence, with optional signed mobile execution. | Signed mobile bundle execution and egress checks are implemented. This is a separate demo route, not a stage in the manual sandbox. |
-| **Worker-Investigate** | Rank likely causes using ticket context and evidence. | Root-cause hypotheses with evidence and confidence. | The sandbox emits low-confidence, keyword-based hypotheses from ticket text and says when telemetry was not collected. The graph RCA model in `rca/` remains a separate experiment. |
-| **Worker-Plan** | Turn investigation results into a safe, reviewable work plan. | Ordered subtasks, acceptance criteria, and effort estimate. | The sandbox emits a deterministic plan template and states when effort cannot be estimated without repository or sprint data. |
-| **Worker-Impl** | Prepare a proposed code change for a scoped task. | Repository-grounded patch or draft change for review. | The sandbox records a draft request only. It does not generate or edit code because no repository coding tool or model is connected. |
-| **Worker-QA** | Check a proposed change against its acceptance criteria. | Prioritized tests, test report, regressions, and pass/fail recommendation. | The sandbox emits a QA checklist and marks the result undetermined when no patch or CI runner exists. QA and RL evaluation components under `envs/` remain separate experiments. |
-| **Worker-Deploy** | Roll out an approved change safely and recover on failure. | Risk-scored canary, telemetry check, deployment recommendation, and rollback. | The sandbox records a 5% canary proposal only. It never deploys; a human release checkpoint remains in the orchestrator. |
-| **Scout-Monitor** | Watch service health after release and feed incidents back into triage. | SLO/anomaly signals and follow-up ticket. | The sandbox marks telemetry as unavailable and identifies the triage feedback-loop target; no production monitoring connector is configured. |
-| **Security-Policy** | Enforce policy and audit all gated or irreversible work. | Confidence/risk gate, secret and egress checks, approval requirement, append-only audit. | The deterministic gate, signed-bundle checks, and append-only Postgres audit are implemented. Full policy enforcement across every specialist stage is not integrated. |
+| 1 Feedback capture | **Scout-Feedback** (Scout, static) | Reads a user message from any channel (app review, e-mail, portal, CS chat, Slack, crash report). Masks e-mails, phone numbers and tokens. Detects the language (Indonesian / English / mixed). Derives a title. Extracts the app version, device and reproduction hints. Guesses the product area. | Real. Rules over the text. |
+| 2 Triage | **Broker-Triage** (Broker, static) | Searches earlier tickets for duplicates: TF-IDF cosine over character n-grams, ≥ 0.85 links, 0.70–0.85 asks a person. Judges severity with English and Indonesian impact rules, optionally with a free OpenRouter model. Applies the autonomy gate. | Real |
+| 2 Assignment | **Broker-Assign** (Broker, static) | Runs a Contract Net auction: three investigation squads (Payments, Mobile app, Platform) bid with utility = 0.5·skill + 0.3·(1 − load) + 0.2·(1 − cost). The winner takes the ticket. Sets the SLA from the severity. | Real |
+| 3 Investigation | **Worker-Investigate-<squad>** (Worker, static) with **Scout-Log** (Scout, mobile) | Scout-Log visits the six data nodes. Where a node holds more than (12 + 2) × 3 = 42 MB of logs, it ships signed analysis code there; otherwise it asks the node's exporter. Only aggregates come back. The investigator ranks the services on the call chain with the report's GraphSAGE-mean calculation (`rca/numerics.py`) and writes a hypothesis. | Mixed. The node trips, signatures and egress checks are real; the node logs are simulated. |
+| 4 Planning | **Worker-Plan** (Worker, static) | Splits the fix into subtasks with estimates and Given/When/Then acceptance criteria. Checks sprint capacity. | Simulated project board |
+| 5 Implementation | **Worker-Impl** (Worker, mobile) | Drafts a pull request for the suspected service. **Security-Policy** scans the draft for secrets; a secret blocks it until it is redrafted. | Simulated repository; the secret scan is real |
+| 6 QA | **Worker-QA** (Worker, static) | Picks the riskiest tests that fit an 8-minute budget (about 120 of 3,400) and reports NAPFD. Merging needs a code review. | Simulated CI; the selection and NAPFD maths are real |
+| 7 Deployment | **Worker-Deploy** (Worker, static) | Computes a release risk score. Runs a 5% canary on its own only if the score is ≤ 0.30, otherwise asks a person. The full release always needs a sign-off, and an SLO breach rolls back automatically. | Simulated deploy pipeline; the rules are real |
+| 8–9 Monitoring and feedback loop | **Scout-Monitor** (Scout, mobile) | Compares post-release metrics with the SLO baselines (z-score ≥ 3 or an SLO breach). A healthy release updates the baseline; an anomaly opens a follow-up ticket that goes back to triage. | Simulated telemetry |
+| All gates | **Security-Policy** (Security) | Evaluates every gate, scans drafts for secrets, signs and checks mobile bundles, allowlists node results, and writes the audit log. | Real |
 
-## Shared agent contract
+## Gates (where a person decides)
 
-`agents/base.py` defines the intended agent loop: perceive input, remember relevant state, reason about a proposal, act behind a policy gate, and report an auditable result. `agents/orchestrator.py` models the nine stages from intake through monitoring. The manual sandbox records a result for every stage, sends stage handoffs as timestamped ACL messages, and exposes the Contract Net negotiation in the live communication view. Results are explicitly bounded: investigation is heuristic, planning is templated, implementation is a draft request, QA is a checklist, and release/monitoring are simulations without external tools.
+| Gate | Stops when | Approve | Request changes | Reject |
+|---|---|---|---|---|
+| `duplicate_review` | Similarity 0.70–0.85 | Link and close | Keep it as a new ticket | Stop |
+| `autonomy_gate` | Confidence < τ (0.70) or risk > R_max (0.60) | Continue | Re-triage with the reviewer's note | Stop |
+| `secret_scan` | A secret is found in the draft | Not allowed | Redraft without it | Stop |
+| `pr_merge` | Always | Merge (recorded, needs this approval) | QA adds the requested checks | Stop |
+| `canary_review` | Release risk > 0.30 | Run the 5% canary | Record constraints, ask again | Stop |
+| `release_signoff` | Always | Full deploy (recorded, needs this approval) | Record constraints, ask again | Stop |
 
-## Human review behavior
+A reason is required for every review. Notes are masked before they are stored. In local mode
+without an OpenRouter key, a triage change request is applied only when it states the new
+severity explicitly ("severity should be High"). Otherwise the run asks for clarification.
 
-- Accept clears the current pause and advances one stage.
-- Reject records the reviewer and note, then stops the run.
-- Reviewers can accept, reject, or request changes. Request changes sends the note to the stage agent, interprets it as requested changes, constraints, and evidence (with clarification when ambiguous), reruns that stage, and records the revised proposal. Triage uses OpenRouter when configured; QA incorporates requested checks, while deployment remains a proposal-only simulation.
-- Accepted notes are interpreted as context for the next stage and included in its ACL handoff.
-- Merge and full-release checkpoints remain human-gated. A stopped run cannot be resumed; a person starts a new run to reconsider corrected input.
+## What is not built
 
-## LLM use
-
-The interactive sandbox uses OpenRouter optionally for Broker-Triage and for structuring reviewer feedback. The repeatable evaluation harness uses only seed 42. Inputs and algorithmic decisions are deterministic; host timings and resource observations can vary. No cross-seed checks are run. LLM interpretation is a proposal: reviewer decisions, policy gates, audit, signature checks, and irreversible-action approvals remain outside the model.
-
-## Project boundary
-
-The repository is a teaching prototype, not an autonomous production delivery system. Its interactive sandbox now traces the nine stages, Contract Net negotiation, audit outputs, and human gates end to end, but it does not connect real repository editing, CI, production deployment, or telemetry. The machine-learning, graph, and RL experiments under `triage/`, `rca/`, and `envs/` are not all composed into the sandbox workflow.
+- **No real systems.** The prototype does not edit a real repository, run a real CI suite or deploy to a real cluster. Those tools are simulated, and the outputs say so.
+- **No live models.** The trained models stay offline: the MiniLM+FAISS duplicate model in `triage/`, the GraphSAGE model in `rca/` and the PPO/DQN policies in `envs/`. The live demo uses their simpler, explainable counterparts.
+- **No undo window.** The report's 30-second undo for autonomous actions is not implemented.

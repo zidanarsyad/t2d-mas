@@ -1,113 +1,91 @@
 import { useState } from "react";
-import { Check, RotateCcw, X } from "lucide-react";
-import { request } from "../api";
+import { Check, MessageCircleQuestion, RotateCcw, X } from "lucide-react";
+import { api } from "../api";
+import { clarificationQuestion, INTENTS, intentEffects, intentLabel } from "../lib/workflow.js";
+import { Notice } from "./Primitives";
+
+const ICONS = { accept: Check, request_changes: RotateCcw, reject: X };
+const BUTTON_CLASS = { accept: "button button-approve", request_changes: "button", reject: "button button-reject" };
+
+/**
+ * Approve / Request changes / Reject and stop. Only the intents the backend allows at this
+ * gate are enabled (a leaked secret can never be approved). A name and a reason are required.
+ * The page reports the outcome; an open question from the agent is read from the ticket itself,
+ * so it stays visible until the reviewer answers.
+ */
 export default function ReviewControls({ record, onRecord }) {
-  const [note, setNote] = useState(""),
-    [reviewer, setReviewer] = useState("Project reviewer"),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState(""),
-    [notice, setNotice] = useState("");
+  const gate = record?.pending_gate?.gate || record?.waiting_for;
+  const allowed = record?.pending_gate?.allowed_intents || INTENTS;
+  const question = clarificationQuestion(record);
+  const [reason, setReason] = useState("");
+  const [reviewer, setReviewer] = useState("Project reviewer");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const ready = !busy && reason.trim().length >= 3 && reviewer.trim().length > 0;
+
   async function decide(intent) {
     setBusy(true);
     setError("");
-    setNotice("");
     try {
-      const next = await request(
-        `/sandbox/tickets/${encodeURIComponent(record.ticket_id)}/review`,
-        "POST",
-        {
-          approver: reviewer.trim(),
-          approved: intent === "accept",
-          intent,
-          reason: note.trim(),
-        },
-      );
-      onRecord(next);
-      const latest = next.reviews.at(-1);
-      setNotice(
-        latest?.decision === "clarification_requested"
-          ? latest.interpretation?.clarification_question ||
-              "Please clarify the requested change."
-          : intent === "request_changes"
-            ? next.agent_outputs?.[latest?.stage]?.reviewer_override
-              ? `Applied the explicit ${next.agent_outputs[latest.stage].reviewer_override} severity correction locally. Continue to submit it for review.`
-              : next.agent_outputs?.[latest?.stage]?.fallback_reason
-                ? `The model service was unavailable (${next.agent_outputs[latest.stage].fallback_reason}). Inspect the local assessment before continuing.`
-                : "The agent revised its proposal. Inspect the result, then continue to review it again."
-            : intent === "accept"
-              ? "Decision saved. The ticket can continue."
-              : "Decision saved. This run is stopped.",
-      );
-      setNote("");
+      const next = await api.review(record.ticket_id, { approver: reviewer.trim(), approved: intent === "accept", intent, reason: reason.trim() });
+      onRecord(next, intent);
+      setReason("");
     } catch (err) {
       setError(err.message);
     } finally {
       setBusy(false);
     }
   }
+
   return (
     <div className="review-controls">
-      <div className="review-guidance">
-        <p>
-          <b>Accept</b> continues with this proposal. <b>Request changes</b>{" "}
-          sends your feedback to the responsible agent. <b>Stop run</b> ends
-          this ticket’s workflow.
-        </p>
+      {question && (
+        <Notice tone="warn" icon={MessageCircleQuestion} title="The agent needs a clearer note" role="status">
+          {question}
+        </Notice>
+      )}
+      <ul className="intent-list">
+        {INTENTS.map((intent) => (
+          <li key={intent} className={allowed.includes(intent) ? "" : "is-disabled"}>
+            <b>{intentLabel[intent]}:</b>{" "}
+            {!allowed.includes(intent) ? <em>not possible at this gate.</em> : intent === "reject" ? "Stop this run here." : intentEffects[gate]?.[intent] || "Continue."}
+          </li>
+        ))}
+      </ul>
+      <div className="form-grid">
+        <label className="field">
+          <span>Your name</span>
+          <input maxLength={80} value={reviewer} onChange={(event) => setReviewer(event.target.value)} />
+        </label>
+        <label className="field">
+          <span>
+            Reason <em className="required">required</em>
+          </span>
+          <textarea
+            rows={3}
+            maxLength={500}
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="Why do you decide this? For a change request, say what the agent should do differently."
+          />
+          <small>{reason.length}/500</small>
+        </label>
       </div>
-      <label>
-        Your name
-        <input
-          maxLength={80}
-          value={reviewer}
-          onChange={(event) => setReviewer(event.target.value)}
-        />
-      </label>
-      <label>
-        Decision note <span>Required</span>
-        <textarea
-          rows={3}
-          maxLength={500}
-          value={note}
-          onChange={(event) => setNote(event.target.value)}
-          placeholder="Explain your decision or the changes the agent should make…"
-        />
-        <small>{note.length}/500 characters</small>
-      </label>
       {error && (
         <p className="form-error" role="alert">
           {error}
         </p>
       )}
-      {notice && (
-        <p className="form-notice" role="status">
-          {notice}
-        </p>
-      )}
-      <div className="review-buttons">
-        <button
-          className="button reject"
-          disabled={busy || note.trim().length < 3 || !reviewer.trim()}
-          onClick={() => decide("reject")}
-        >
-          <X size={16} />
-          Stop run
-        </button>
-        <button
-          className="button secondary"
-          disabled={busy || note.trim().length < 3 || !reviewer.trim()}
-          onClick={() => decide("request_changes")}
-        >
-          <RotateCcw size={16} />
-          Request changes
-        </button>
-        <button
-          className="button approve"
-          disabled={busy || note.trim().length < 3 || !reviewer.trim()}
-          onClick={() => decide("accept")}
-        >
-          <Check size={16} />
-          {busy ? "Saving…" : "Accept proposal"}
-        </button>
+      <div className="button-row review-buttons">
+        {[...INTENTS].reverse().map((intent) => {
+          const Icon = ICONS[intent];
+          return (
+            <button key={intent} type="button" className={BUTTON_CLASS[intent]} disabled={!ready || !allowed.includes(intent)} onClick={() => decide(intent)}>
+              <Icon size={16} aria-hidden="true" />
+              {busy ? "Saving…" : intentLabel[intent]}
+            </button>
+          );
+        })}
       </div>
     </div>
   );

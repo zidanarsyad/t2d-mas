@@ -1,71 +1,133 @@
-import { ArrowRight, Beaker, CheckCircle2, FlaskConical, ShieldCheck, Workflow } from "lucide-react";
-import { Heading, Panel, SectionTitle } from "../components/Primitives";
+import { useMemo } from "react";
+import { CircleCheck, CirclePlay, FlaskConical, ShieldCheck, TriangleAlert, Workflow } from "lucide-react";
+import PipelineFlow from "../components/PipelineFlow";
+import Term from "../components/Term";
+import { Heading, Panel, SectionTitle, Tag } from "../components/Primitives";
+import { replayFrames } from "../lib/flow.js";
+import { gates, phases, stages } from "../lib/workflow.js";
+import { sampleConversation, sampleIntro, sampleOutro } from "../data/sampleConversation.js";
+import { ideaVsPrototype } from "../data/reportExamples.js";
+import { useStepPlayer } from "../hooks/useStepPlayer";
 
-const phases = [
-  {
-    title: "1. Understand the report",
-    description: "Turn incoming feedback into a clear piece of work.",
-    steps: [
-      { title: "Intake", detail: "Capture the user's issue." },
-      // Triage has no fixed checkpoint: it pauses only when the confidence/risk gate escalates.
-      { title: "Triage", detail: "Assess urgency; duplicate search remains a separate module.", gate: "Confirm the impact assessment", review: "Review if escalated" },
-      { title: "Assignment", detail: "Choose the right team." },
-      { title: "Investigation", detail: "Look for evidence and a likely cause." },
-    ],
-  },
-  {
-    title: "2. Prepare and check a fix",
-    description: "Specialists prepare a proposed change and quality checks.",
-    steps: [
-      { title: "Planning", detail: "Describe the work and success criteria." },
-      { title: "Implementation", detail: "Prepare a draft change." },
-      { title: "QA checks", detail: "Review proposed tests and risks.", gate: "Review the proposed change" },
-    ],
-  },
-  {
-    title: "3. Release and learn",
-    description: "Release decisions stay with people; service health informs future work.",
-    steps: [
-      { title: "Deployment", detail: "Plan a cautious release.", gate: "Approve the release proposal" },
-      { title: "Monitoring", detail: "Share simulated observations back with triage." },
-    ],
-  },
-];
+const STATUS_TAG = {
+  real: { tone: "green", icon: CircleCheck, label: "Real" },
+  mixed: { tone: "amber", icon: TriangleAlert, label: "Mixed" },
+  simulated: { tone: "violet", icon: FlaskConical, label: "Simulated" },
+};
 
-export default function OverviewPage({ onNavigate }) {
-  return <div className="page-wrap overview-page">
-    <Heading
-      eyebrow="Start here · project guide"
-      title="From feedback to a safer release"
-      subtitle="T2D-MAS helps a software team sort a reported issue, prepare a fix, and review important decisions before release."
-      action={<div className="overview-actions"><button className="button secondary" onClick={() => onNavigate("experiments")}><FlaskConical size={14}/>Compare A0–A3</button><button className="button primary" onClick={() => onNavigate("test")}><Beaker size={14}/>Try a sample ticket</button></div>}
-    />
+export default function OverviewPage({ workspace, onNavigate }) {
+  const { policy } = workspace;
+  const frames = useMemo(() => replayFrames(sampleConversation, { intro: sampleIntro, outro: sampleOutro, policy }), [policy]);
+  // One autoplay per page: the story starts by itself unless the user prefers reduced motion.
+  const player = useStepPlayer(frames, { autoPlay: true });
+  const always = gates.filter((gate) => !gate.conditional).length;
 
-    <Panel className="overview-purpose">
-      <span className="overview-purpose-icon"><Workflow size={20}/></span>
-      <div><small>WHAT THIS PROJECT DOES</small><b>One guided workflow, with people reviewing key decisions.</b><p>Specialist software agents help with the hand-offs from an incoming issue to a proposed release. A person always reviews the proposed change and the release proposal, and confirms the impact assessment when triage confidence is low or the risk is high.</p></div>
-    </Panel>
+  return (
+    <div className="page">
+      <Heading
+        eyebrow="Start here"
+        title="From user feedback to a safer release"
+        what="A replay of one flash-sale incident (TCK-1042) as nine agents hand it from stage to stage."
+        why="It shows where agents may act alone and where a person must decide."
+        action={
+          <>
+            <button type="button" className="button" onClick={() => onNavigate("experiments")}>
+              <FlaskConical size={16} aria-hidden="true" />
+              Compare A0–A3
+            </button>
+            <button type="button" className="button button-primary" onClick={() => onNavigate("run")}>
+              <CirclePlay size={16} aria-hidden="true" />
+              Run a ticket
+            </button>
+          </>
+        }
+      />
 
-    <div className="overview-facts">
-      <Panel><span className="overview-fact-icon"><Workflow size={17}/></span><div><b>9 steps</b><small>From report intake through service monitoring</small></div></Panel>
-      <Panel><span className="overview-fact-icon"><ShieldCheck size={17}/></span><div><b>2 human reviews</b><small>Proposed change and release, plus triage when escalated</small></div></Panel>
-      <Panel><span className="overview-fact-icon"><CheckCircle2 size={17}/></span><div><b>Course prototype</b><small>Some checks and outcomes are simulated or drafted</small></div></Panel>
+      <Panel>
+        <PipelineFlow frame={player.step} player={player} source="replay" title="TCK-1042: checkout crashes in the 10.10 flash sale" ticketLabel="TCK-1042" policy={policy} />
+      </Panel>
+
+      <div className="fact-row">
+        <Panel className="fact">
+          <Workflow size={18} aria-hidden="true" />
+          <div>
+            <b>{stages.length} stages</b>
+            <small>From feedback capture to monitoring, then back to triage</small>
+          </div>
+        </Panel>
+        <Panel className="fact">
+          <ShieldCheck size={18} aria-hidden="true" />
+          <div>
+            <b>{gates.length} human gates</b>
+            <small>
+              {always} always ask a person; {gates.length - always} only when a rule fails, like the <Term id="autonomy-gate">autonomy gate</Term>
+            </small>
+          </div>
+        </Panel>
+        <Panel className="fact">
+          <FlaskConical size={18} aria-hidden="true" />
+          <div>
+            <b>Course prototype</b>
+            <small>Some stages are simulated with seeded data; every page says which</small>
+          </div>
+        </Panel>
+      </div>
+
+      <SectionTitle title="The nine stages in three phases" detail="Each stage has one responsible agent. Select Run a ticket to watch a real run." />
+      <div className="phase-grid">
+        {phases.map((phase) => (
+          <Panel key={phase.id} className="phase">
+            <h3>{phase.name}</h3>
+            <p className="muted">{phase.description}</p>
+            <ol className="phase-stages">
+              {stages
+                .filter((stage) => stage.phase === phase.id)
+                .map((stage) => (
+                  <li key={stage.id}>
+                    <b>
+                      {stages.indexOf(stage) + 1}. {stage.name}
+                    </b>
+                    <span>{stage.plain}</span>
+                    <small>{stage.agent}</small>
+                  </li>
+                ))}
+            </ol>
+          </Panel>
+        ))}
+      </div>
+
+      <Panel>
+        <SectionTitle title="Idea vs prototype" detail="What the report designed, and what this prototype really runs." />
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th scope="col">Area</th>
+                <th scope="col">The idea</th>
+                <th scope="col">In this prototype</th>
+                <th scope="col">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ideaVsPrototype.map((row) => {
+                const status = STATUS_TAG[row.status];
+                return (
+                  <tr key={row.area}>
+                    <th scope="row">{row.area}</th>
+                    <td>{row.idea}</td>
+                    <td>{row.prototype}</td>
+                    <td>
+                      <Tag tone={status.tone} icon={status.icon}>
+                        {status.label}
+                      </Tag>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
     </div>
-
-    <div className="overview-section-heading"><SectionTitle title="How a ticket moves through the system" detail="Read each row from left to right. Numbered steps make up the nine-stage workflow."/></div>
-    <div className="overview-phases">
-      {phases.map((phase, phaseIndex) => <Panel className="overview-phase" key={phase.title}>
-        <div className="overview-phase-title"><span>{String(phaseIndex + 1).padStart(2, "0")}</span><div><h2>{phase.title}</h2><p>{phase.description}</p></div></div>
-        <ol className="overview-stage-flow">
-          {phase.steps.map((step, stepIndex) => <li className="overview-stage-item" key={step.title}>
-            <div className="overview-stage-card"><span>{String(phases.slice(0, phaseIndex).reduce((total, item) => total + item.steps.length, 0) + stepIndex + 1).padStart(2, "0")}</span><b>{step.title}</b><small>{step.detail}</small></div>
-            {step.gate && <div className="overview-checkpoint"><ShieldCheck size={13}/><span><b>{step.review || "Human review"}</b><small>{step.gate}</small></span></div>}
-            {stepIndex < phase.steps.length - 1 && <ArrowRight className="overview-flow-arrow" size={16} aria-hidden="true"/>}
-          </li>)}
-        </ol>
-      </Panel>)}
-    </div>
-
-    <Panel className="overview-scope"><ShieldCheck size={17}/><div><b>People can pause high-risk decisions.</b><p>When confidence is low or a proposed action carries too much risk, the workflow asks a person to review it. This classroom prototype can prepare plans and release proposals, but it does not run a connected production deployment.</p></div></Panel>
-  </div>;
+  );
 }

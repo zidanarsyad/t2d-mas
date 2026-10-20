@@ -1,72 +1,43 @@
-import { useEffect, useRef, useState } from "react";
-import { Copy, Download, X } from "lucide-react";
-import { exportFile } from "../exportFile";
+import { useState } from "react";
+import { Copy, Download } from "lucide-react";
+import Dialog from "./Dialog";
+import { exportFile } from "../lib/exportFile.js";
 
-export default function ExportDialog({
-  content,
-  type,
-  filename,
-  description,
-  onClose,
-}) {
-  const dialog = useRef(null);
+/** Download or copy a JSON/CSV export, with a preview of exactly what is exported. */
+export default function ExportDialog({ content, type, filename, description, onClose }) {
   const [notice, setNotice] = useState("");
   const [preview, setPreview] = useState(false);
-  useEffect(() => {
-    const element = dialog.current;
-    element.showModal();
-    return () => element.close();
-  }, []);
+
   async function copy() {
     try {
       await navigator.clipboard.writeText(content);
-      setNotice(
-        "File contents copied. You can paste them into a file or another tool.",
-      );
+      setNotice("Copied. Paste it into a file or another tool.");
     } catch {
       setPreview(true);
-      setNotice(
-        "Select the file contents below and copy them with Ctrl+C or Command+C.",
-      );
+      setNotice("Copying is blocked here. Select the text below and press Ctrl+C (or Cmd+C).");
     }
   }
+
   return (
-    <dialog
-      ref={dialog}
-      className="workspace-dialog export-dialog"
-      aria-label="Export selected data"
-      onCancel={onClose}
-      onClick={(event) => event.target === dialog.current && onClose()}
-    >
-      <div className="dialog-heading">
-        <h2>Export selected data</h2>
-        <button
-          className="icon-btn"
-          aria-label="Close export"
-          onClick={onClose}
-        >
-          <X size={20} />
-        </button>
-      </div>
-      <div className="export-content">
+    <Dialog title="Export" onClose={onClose}>
+      <div className="stack">
         <p>{description}</p>
-        <b className="export-filename">{filename}</b>
-        <div className="export-options">
+        <code className="export-filename">{filename}</code>
+        <div className="button-row">
           <button
-            className="button primary"
+            type="button"
+            className="button button-primary"
             onClick={() => {
               exportFile(content, type, filename);
-              setNotice(
-                "Download requested. You can also copy the file contents.",
-              );
+              setNotice("Download started.");
             }}
           >
-            <Download size={17} />
+            <Download size={16} />
             Download file
           </button>
-          <button className="button secondary" onClick={copy}>
-            <Copy size={17} />
-            Copy file contents
+          <button type="button" className="button" onClick={copy}>
+            <Copy size={16} />
+            Copy contents
           </button>
         </div>
         {notice && (
@@ -74,20 +45,11 @@ export default function ExportDialog({
             {notice}
           </p>
         )}
-        <details
-          className="technical-details"
-          open={preview}
-          onToggle={(event) => setPreview(event.currentTarget.open)}
-        >
-          <summary>Preview file contents</summary>
-          <textarea
-            aria-label="Exported file content"
-            value={content}
-            readOnly
-            rows={8}
-          />
+        <details className="details" open={preview} onToggle={(event) => setPreview(event.currentTarget.open)}>
+          <summary>Preview the file</summary>
+          <textarea className="export-preview" aria-label="Exported file contents" value={content} readOnly rows={8} />
         </details>
       </div>
-    </dialog>
+    </Dialog>
   );
 }

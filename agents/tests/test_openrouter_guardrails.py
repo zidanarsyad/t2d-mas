@@ -5,11 +5,7 @@ import json
 import httpx
 import pytest
 
-from agents import app as api
 from agents import severity_triage
-from agents.app import ManualReview, ManualTicket
-from agents.audit import MemoryAuditSink
-from agents.orchestrator import T2DOrchestrator
 
 FREE_MODELS = [default for _variable, default in severity_triage._DEFAULT_MODELS]
 RATE_LIMITED = (429, {"error": {"code": 429, "message": "Rate limit exceeded: free-models-per-min"}})
@@ -22,35 +18,12 @@ def proposal(severity):
 
 
 @pytest.fixture
-def sandbox(monkeypatch):
-    """Run the manual sandbox in memory, with an OpenRouter key and default model settings."""
-    audit = MemoryAuditSink()
-
-    class Bus:
-        async def publish(self, _message):
-            return "guardrail-1"
-
-    async def no_event(_event):
-        return None
-
-    monkeypatch.setattr(api.app.state, "audit", audit, raising=False)
-    monkeypatch.setattr(api.app.state, "pipeline", T2DOrchestrator(audit), raising=False)
-    monkeypatch.setattr(api.app.state, "manual_ticket_records", {}, raising=False)
-    monkeypatch.setattr(api.app.state, "bus", Bus(), raising=False)
-    monkeypatch.setattr(api, "_save_ticket_record", lambda *_args: None)
-    monkeypatch.setattr(api, "_update_ticket_severity", lambda *_args: None)
-    monkeypatch.setattr(api.event_hub, "publish", no_event)
+def keyed(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
-    monkeypatch.delenv("OPENROUTER_MODEL", raising=False)
-    monkeypatch.delenv("OPENROUTER_FALLBACK_MODEL", raising=False)
-    return audit
 
 
 def fake_openrouter(monkeypatch, *answers):
-    """Answer OpenRouter requests locally, in order (the last answer repeats).
-
-    Returns the list of request bodies that were sent.
-    """
+    """Answer OpenRouter requests locally, in order (the last answer repeats); returns the request bodies."""
     sent = []
     real_client = httpx.AsyncClient
 
@@ -59,75 +32,79 @@ def fake_openrouter(monkeypatch, *answers):
         status_code, payload = answers[min(len(sent), len(answers)) - 1]
         return httpx.Response(status_code, json=payload)
 
-    monkeypatch.setattr(httpx, "AsyncClient",
-                        lambda **kwargs: real_client(transport=httpx.MockTransport(handler), **kwargs))
+    def client(**kwargs):
+        # Node calls bring their own in-process transport; only OpenRouter calls are faked.
+        if kwargs.get("transport") is None:
+            kwargs["transport"] = httpx.MockTransport(handler)
+        return real_client(**kwargs)
+
+    monkeypatch.setattr(httpx, "AsyncClient", client)
     return sent
 
 
-@pytest.mark.parametrize(("title", "body", "severity", "reason"), [
+@pytest.mark.parametrize(("body", "severity", "reason"), [
     # Rules are confident (0.91), but Critical risk (1.0) is above R_max.
-    ("Customer data breach", "Exposed customer data after unauthorized access to the admin API.",
+    ("Customer data breach: exposed customer data after unauthorized access to the admin API.",
      "Critical", "risk_too_high"),
     # Rules give High a confidence of 0.68, below tau.
-    ("Checkout outage", "Customers cannot complete checkout during a sale.", "High", "low_confidence"),
+    ("Checkout outage: customers cannot complete checkout during a sale.", "High", "low_confidence"),
 ])
-def test_rate_limited_triage_still_escalates_to_a_human(sandbox, monkeypatch, title, body, severity, reason):
+def test_rate_limited_triage_still_escalates_to_a_human(make_pipeline, keyed, monkeypatch, body, severity, reason):
     fake_openrouter(monkeypatch, RATE_LIMITED)
+    pipeline = make_pipeline()
 
     async def run():
-        ticket = await api.start_manual_ticket(ManualTicket(title=title, body=body))
-        await api.advance_manual_ticket(ticket["ticket_id"])  # intake -> triage
-        return await api.advance_manual_ticket(ticket["ticket_id"])  # autonomy gate
+        ticket = await pipeline.create_ticket(body=body)
+        await pipeline.advance(ticket["ticket_id"])           # intake -> triage
+        return await pipeline.advance(ticket["ticket_id"])    # triage runs, then the gate
 
     paused = asyncio.run(run())
     assert paused["severity"] == severity
-    assert paused["status"] == "waiting_for_review"
-    assert paused["waiting_for"] == "autonomy_gate"
-    assert paused["current_stage"] == "triage"
-    gate = next(event for event in sandbox.events if event.action == "policy_gate")
+    assert paused["status"] == "waiting_for_review" and paused["waiting_for"] == "autonomy_gate"
+    gate = next(event for event in pipeline.audit.events
+                if event.action == "policy_gate" and event.details["gate"] == "autonomy_gate")
     assert gate.decision == "escalated"
     assert gate.details["reason"] == reason
     assert gate.details["rate_limited"] is True
     assert gate.details["fallback_reason"] == "OpenRouter returned HTTP 429"
 
 
-def test_rate_limited_change_request_waits_for_clarification(sandbox, monkeypatch):
+def test_rate_limited_change_request_waits_for_clarification(make_pipeline, keyed, monkeypatch):
     # The first triage succeeds and escalates; only the reviewer's re-triage hits the rate limit.
     fake_openrouter(monkeypatch, proposal("High"), RATE_LIMITED)
+    pipeline = make_pipeline()
 
     async def run():
-        ticket = await api.start_manual_ticket(ManualTicket(
-            title="Checkout outage", body="Customers cannot complete checkout during a sale."))
-        await api.advance_manual_ticket(ticket["ticket_id"])
-        await api.advance_manual_ticket(ticket["ticket_id"])
-        return await api.review_manual_ticket(ticket["ticket_id"], ManualReview(
-            approver="reviewer", approved=False, intent="request_changes",
-            reason="Only one region is affected; please reassess the impact."))
+        ticket = await pipeline.create_ticket(body="Checkout outage: customers cannot complete checkout during a sale.")
+        await pipeline.advance(ticket["ticket_id"])
+        await pipeline.advance(ticket["ticket_id"])
+        return await pipeline.review(ticket["ticket_id"], "reviewer", False, "request_changes",
+                                     "Only one region is affected; please reassess the impact.")
 
     result = asyncio.run(run())
     review = result["reviews"][-1]
     assert review["decision"] == "clarification_requested"
     assert "HTTP 429" in review["interpretation"]["clarification_question"]
-    assert result["status"] == "waiting_for_review"
-    assert result["waiting_for"] == "autonomy_gate"
+    assert result["status"] == "waiting_for_review" and result["waiting_for"] == "autonomy_gate"
 
 
-def test_model_ids_without_free_suffix_are_never_sent(sandbox, monkeypatch):
+def test_model_ids_without_free_suffix_are_never_sent(make_pipeline, keyed, monkeypatch):
     paid = {"OPENROUTER_MODEL": "openai/gpt-4o", "OPENROUTER_FALLBACK_MODEL": "anthropic/claude-sonnet-4.5"}
     for variable, model in paid.items():
         monkeypatch.setenv(variable, model)
     sent = fake_openrouter(monkeypatch, proposal("Low"))
+    pipeline = make_pipeline()
 
     async def run():
-        await api.start_manual_ticket(ManualTicket(
-            title="Checkout label typo", body="The checkout button label has a typo."))
+        ticket = await pipeline.create_ticket(body="The checkout button label has a typo.")
+        await pipeline.advance(ticket["ticket_id"])
+        await pipeline.advance(ticket["ticket_id"])  # triage asks the model once
         return await severity_triage.interpret_review_feedback("Also check the mobile layout.", "qa")
 
     interpretation = asyncio.run(run())
-    # Triage and review interpretation each made one request, with the default free models only.
     assert [body["models"] for body in sent] == [FREE_MODELS, FREE_MODELS]
     assert not any(model in json.dumps(sent) for model in paid.values())
-    triage = next(event.details["output"] for event in sandbox.events
+    triage = next(event.details["output"] for event in pipeline.audit.events
                   if event.action == "agent_output" and event.details["stage"] == "triage")
     assert triage["provider"] == "openrouter"
     for recorded in (triage["model_fallback_reason"], interpretation["model_fallback_reason"]):

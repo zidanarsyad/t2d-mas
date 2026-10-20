@@ -6,3 +6,8 @@
 .pptx_build
 /tmp/
 /pytest-cache-files-*/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+~$*
+.eval-check/

@@ -29,16 +29,6 @@ def average_precision(relevant: Iterable[str], ranked: Sequence[str]) -> float:
     return total / len(truth)
 
 
-def mean_average_precision(relevant_sets: Iterable[Iterable[str]],
-                           ranked_lists: Iterable[Sequence[str]]) -> float:
-    """Mean average precision over query-aligned relevance sets and rankings."""
-    pairs = [(set(relevant), ranked)
-             for relevant, ranked in zip(relevant_sets, ranked_lists, strict=True)]
-    # Queries without any labeled relevant document have undefined AP and are excluded.
-    values = [average_precision(relevant, ranked) for relevant, ranked in pairs if set(relevant)]
-    return sum(values) / len(values) if values else 0.0
-
-
 def macro_f1(actual: Sequence[str], predicted: Sequence[str],
              labels: Sequence[str]) -> float:
     """Unweighted mean F1 across labels, assigning zero to undefined class scores."""
@@ -67,13 +57,6 @@ def napfd(detected_fault_ranks: Iterable[int], num_tests: int,
     detected = min(len(ranks), total_faults) / total_faults
     value = detected - sum(ranks) / (num_tests * total_faults) + detected / (2 * num_tests)
     return max(0.0, min(1.0, value))
-
-
-def rca_top_k(ranked_nodes: Sequence[str | int], incident_nodes: Iterable[str | int],
-              k: int) -> float:
-    """Return 1 when an incident node appears in the first k positions, else 0."""
-    truth = set(incident_nodes)
-    return float(bool(truth.intersection(ranked_nodes[:k])))
 
 
 def dora_metrics(*, successful_deployments: int, total_days: float,

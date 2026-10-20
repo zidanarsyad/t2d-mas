@@ -6,7 +6,8 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Iterable
 
 from agents.audit import AuditEvent, AuditSink
-from agents.bus import ACLMessage, RedisStreamBus
+from agents.bus import ACLMessage
+from agents.policy import DEFAULT_POLICY
 
 
 def utility(skill: float, load: float, cost: float) -> float:
@@ -39,12 +40,13 @@ async def select_winner(proposals: Iterable[Proposal]) -> tuple[Proposal, list[P
 class ContractNetBroker:
     """Publishes CFPs, gathers bids until deadline, then sends accept/reject messages."""
 
-    def __init__(self, bus: RedisStreamBus,
+    def __init__(self, bus: Any,
                  bidder: Callable[[str, dict[str, Any]], Awaitable[Proposal | None]],
-                 audit_sink: AuditSink) -> None:
-        self.bus = bus
+                 audit_sink: AuditSink, policy_context: dict[str, Any] | None = None) -> None:
+        self.bus = bus  # anything with `async publish(ACLMessage)`, e.g. the MessageService
         self.bidder = bidder
         self.audit_sink = audit_sink
+        self.policy_context = policy_context or {"tau": DEFAULT_POLICY.tau, "risk_max": DEFAULT_POLICY.risk_max}
 
     async def assign(self, task: dict[str, Any], workers: list[str],
                      deadline_s: float = 2.0) -> Proposal:
@@ -53,7 +55,7 @@ class ContractNetBroker:
         self.audit_sink.append(AuditEvent(actor_id="broker-assign", action="contract_net",
             decision="cfp_authorized", correlation_id=correlation_id,
             ticket_id=correlation_id, details={"workers": workers, "deadline_s": deadline_s}))
-        cfp = ACLMessage("cfp", correlation_id, task, {"tau": 0.70, "risk_max": 0.60},
+        cfp = ACLMessage("cfp", correlation_id, task, dict(self.policy_context),
                          sender="Broker-Assign", receiver=workers)
         await self.bus.publish(cfp)
         bids: list[Proposal] = []

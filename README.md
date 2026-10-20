@@ -1,186 +1,137 @@
 # T2D-MAS — Ticket-to-Deployment Multi-Agent System
 
-T2D-MAS is a course-project prototype that explores how a multi-agent system can move a software ticket through triage, investigation, implementation, testing, review, and deployment. It combines a nine-stage orchestration pipeline with auditable decisions, policy gates, optional mobile agents, and a small React dashboard.
+T2D-MAS shows how a team of software agents can take a user's complaint ("aplikasi nutup sendiri
+pas bayar…") all the way to a monitored fix:
+1. understand and mask the feedback;
+2. spot duplicates;
+3. judge the impact;
+4. pick a squad;
+5. investigate on the data nodes;
+6. plan;
+7. draft a change;
+8. test;
+9. release and watch.
 
-> **Course prototype:** this repository is for a group assignment and demonstrations. It is not a production deployment platform or a security boundary for untrusted code.
+People stay in control: risky or irreversible steps stop and wait for a named reviewer.
 
-## Project goals
+> **Course prototype** for the Agen Cerdas Enterprise group assignment (UGM). It is not a
+> production platform. Where no real system exists (repository, CI, cluster, telemetry), seeded
+> simulators stand in, and every output says so. [docs/AUDIT.md](docs/AUDIT.md) lists exactly
+> what is real, simulated or not built, compared with the original idea.
 
-- Compare rule-based, single-agent, static multi-agent, and mobile multi-agent approaches.
-- Demonstrate ticket deduplication, severity prediction, root-cause ranking, CI test prioritization, and canary deployment decisions.
-- Make human approval, auditability, and data locality visible in the pipeline.
-- Produce seeded, repeatable classroom experiments and report artifacts.
-
-## Architecture
+## How a ticket moves
 
 ```mermaid
 flowchart LR
-    UI[React dashboard] <-->|REST + SSE| API[FastAPI orchestrator]
-    API --> BUS[Redis Streams / ACL bus]
-    API --> DB[(PostgreSQL + pgvector)]
-    API --> GATE{Confidence and risk gate}
-    GATE -->|pass| PIPE[9-stage ticket pipeline]
-    GATE -->|escalate| HUMAN[Human reviews]
-    HUMAN -->|approved| PIPE
-    PIPE --> STATIC[Static agents]
-    PIPE --> MOBILE[Mobile agent runtime]
-    MOBILE --> NODES[Six demo data nodes]
-    NODES -->|aggregated features only| MOBILE
-    DATA[Ticket datasets] --> TRIAGE[Triage and dedup]
-    TRIAGE --> API
-    PIPE --> RCA[Graph-based RCA]
-    PIPE --> RL[CI/CD RL environments]
-    EVAL[Four-arm evaluation] --> RESULTS[Timestamped results]
+    FB[User feedback<br/>reviews, e-mail, chat,<br/>crash reports] --> S1[1 Feedback capture<br/>Scout-Feedback]
+    S1 --> S2[2 Triage<br/>Broker-Triage]
+    S2 -- "duplicate ≥ 0.85" --> LINK[Linked to the original]
+    S2 -- "0.70–0.85 or low confidence / high risk" --> H1{{Human review}}
+    H1 --> S3
+    S2 --> S3[Assignment<br/>Broker-Assign: Contract Net]
+    S3 --> S4[3 Investigation<br/>squad worker + Scout-Log on 6 nodes]
+    S4 --> S5[4 Planning<br/>Worker-Plan]
+    S5 --> S6[5 Implementation<br/>Worker-Impl + secret scan]
+    S6 --> S7[6 QA<br/>Worker-QA]
+    S7 --> H2{{Merge review}}
+    H2 --> S8[7 Deployment<br/>Worker-Deploy: 5% canary]
+    S8 --> H3{{Release sign-off}}
+    H3 --> S9[8 Monitoring<br/>Scout-Monitor]
+    S9 -- "anomaly: new ticket" --> S1
 ```
 
-The system uses the autonomy rule `confidence >= tau AND risk <= risk_max`; otherwise, it escalates. Merge and full-deployment actions require an explicit `human_approved=True` flag. Agent actions are written to an append-only audit log, and the mobile demo returns allowlisted aggregate fields rather than raw node data.
+The four project rules hold throughout:
+1. No merge or full deploy without `human_approved`. This is checked in three places: the orchestrator, the recorded approval and the database triggers.
+2. Every agent action goes into an append-only audit log.
+3. Raw data never leaves a data node; only aggregates do.
+4. Every number in the report can be reproduced from code with fixed seeds.
 
-## Repository layout
+**The autonomy gate:** an agent acts on its own only if its confidence is at least **τ = 0.70** and the risk is at most **R_max = 0.60**. Otherwise a person decides.
 
-| Path | Purpose |
-|---|---|
-| `agents/` | Agent interface, Redis Streams message bus, Contract Net assignment, mobile runtime, policy checks, and orchestrator |
-| `data/` | PostgreSQL schema, ticket loaders, preprocessing, dataset statistics, and mock enterprise APIs |
-| `triage/` | Local embeddings, FAISS duplicate search, severity classifiers, and autonomy gate |
-| `rca/` | PyTorch Geometric service graph builder, GraphSAGE ranker, explanations, and baseline |
-| `envs/` | Gymnasium CI test-prioritization and canary-deployment environments; SB3 training/evaluation |
-| `eval/` | Four-arm benchmark, metrics, security injections, and BAB 9.4 report generator |
-| `frontend/` | React + Tailwind + Recharts delivery workspace with ten views, ticket conversations, review gates, and SSE updates |
-| `docker-compose.yml` | Orchestrator, six demo nodes, Redis, and PostgreSQL/pgvector |
+## Run it (no Docker needed)
 
-Each module has its own README and `requirements.txt`. The root `requirements.txt` installs the full course-project stack, including the larger ML/RL dependencies. To keep installation smaller, install only the requirements for the module you plan to run.
-
-## Quick start: backend demo
-
-Requirements: Docker with the Compose plugin.
-
-For the presentation flow, prepared sample ticket, review prompts, and screen-by-screen explanations, see the [live demo guide](deliverables/T2D-MAS-Live-Demo-Guide.md).
-
-```sh
-docker compose up --build
-```
-
-If host port 8000 is already in use, run Compose on another host port. For PowerShell:
+You need Python 3.11+ and Node 20+. Use two terminals, both starting from the repository root.
 
 ```powershell
-$env:ORCHESTRATOR_PORT = "8001"
-docker compose up --build
+python -m pip install -r agents/requirements.txt
+python -m uvicorn agents.app:app --port 8000
 ```
 
-Then use `http://localhost:8001` for the orchestrator. The container continues listening on port 8000.
-
-The services expose:
-
-- Orchestrator API and OpenAPI UI: `http://localhost:8000` and `http://localhost:8000/docs`
-- Health check: `http://localhost:8000/health`
-- Pending approvals: `http://localhost:8000/approvals`
-- Server-sent events: `http://localhost:8000/events`
-
-The demo API can create tickets, inspect approval requests, publish/read Redis-backed messages, and submit a signed mobile migration bundle. The dashboard's Run a ticket screen walks through nine local agent stages; Agent conversations shows live ACL handoffs, Contract Net bids, decisions, and recipients; Ticket history shows masked ticket inputs and timestamped outputs in Postgres. See [`agents/README.md`](agents/README.md) and the [agent task and capability catalog](agents/AGENT_CATALOG.md) for routes and prototype boundaries. PostgreSQL initializes from `data/schema.sql` when its volume is first created.
-
-To stop the demo:
-
-```sh
-docker compose down
-```
-
-## Run the dashboard
-
-In a separate terminal, with the backend running:
-
-```sh
+```powershell
 cd frontend
 npm install
 npm run dev
 ```
 
-Open the Vite URL shown in the terminal (usually `http://localhost:5173`). The dashboard proxies API and SSE traffic to the local backend by default. Set `VITE_API_TARGET` to use another FastAPI host. Some seeded dashboard cards are local demo data; see [`frontend/README.md`](frontend/README.md).
+Open the address Vite prints (usually http://localhost:5173).
 
-## Python setup
+**Local mode.** Without Docker the backend runs everything in one process: memory storage, an in-memory message bus and six in-process data nodes. The dashboard labels these parts as local, and everything resets when you stop the server. The dashboard's replay views also work with the backend stopped.
 
-Python 3.11 is the project target. Create and activate a virtual environment. For the full project environment:
+**Docker.** To run the full stack (orchestrator, six node containers, Redis and PostgreSQL), use `docker compose up --build`. After a database schema change, run `docker compose down -v` once.
 
-```sh
-python -m venv .venv
-# Windows PowerShell: .venv\Scripts\Activate.ps1
-# macOS/Linux: source .venv/bin/activate
-python -m pip install -r requirements.txt
-```
+**Live demo.** For a 5-minute presentation path, see the [live demo guide](deliverables/T2D-MAS-Live-Demo-Guide.md).
 
-The full install can take longer and use more disk space because it includes PyTorch, Transformers, FAISS, and reinforcement-learning packages. For only the backend demo, run `python -m pip install -r agents/requirements.txt` instead.
+## Where things are
 
-Additional module dependencies:
+| Path | What it is |
+|---|---|
+| `agents/` | The orchestrator API and the nine agents ([README](agents/README.md), [agent catalog](agents/AGENT_CATALOG.md)) |
+| `frontend/` | The React dashboard with process and monitoring animations ([README](frontend/README.md)) |
+| `data/` | Database schema, ticket loaders, preprocessing, dataset statistics ([README](data/README.md)) |
+| `triage/` | Offline duplicate search (MiniLM + FAISS) and severity models ([README](triage/README.md)) |
+| `rca/` | Offline graph root-cause ranking (GraphSAGE, GNNExplainer, PageRank) ([README](rca/README.md)) |
+| `envs/` | Offline reinforcement learning for test order and canary releases ([README](envs/README.md)) |
+| `eval/` | The A0–A3 evaluation behind the report's numbers ([README](eval/README.md)) |
+| `docs/` | The original idea, the final report, [the audit](docs/AUDIT.md), process notes |
+| `deliverables/` | Presentation deck and live demo guide |
 
-```sh
-python -m pip install -r data/requirements.txt
-python -m pip install -r triage/requirements.txt
-python -m pip install -r rca/requirements.txt
-python -m pip install -r envs/requirements.txt
+The live agents reuse three small pieces of the offline modules:
+- the autonomy gate in `triage/gate.py`;
+- the GraphSAGE reference calculation in `rca/numerics.py`;
+- NAPFD in `eval/metrics.py`.
+
+The heavy models stay offline; see the module READMEs to run them.
+
+## Evaluation (the report's numbers)
+
+The harness compares four set-ups over the same generated tickets: 100 per seed for seeds 42–46, so 500 per set-up.
+- **A0:** rule-based.
+- **A1:** single agent.
+- **A2:** static multi-agent.
+- **A3:** multi-agent with mobile agents.
+
+```powershell
 python -m pip install -r eval/requirements.txt
+python -m eval.runner --config eval/config.json --output-root results     # or: make eval
+python -m eval.compare_runs results/20260930T020846305626 <new-run-folder> # same numbers as the report?
 ```
 
-PyTorch Geometric installation can depend on the local PyTorch build; consult the official PyG installation guide if a matching wheel is needed.
-
-## Data and privacy
-
-The ticket loaders accept local exports and supported public sources. PostgreSQL loading is optional; Parquet export and preprocessing can run separately. For database loading, configure `DATABASE_URL` and apply the schema:
-
-```sh
-psql "$DATABASE_URL" -f data/schema.sql
-```
-
-Preprocessing masks common email, phone, and token patterns and assigns chronological train/validation/test splits. During mobile analysis, the demo keeps raw node data local and returns only allowlisted aggregates. See [`data/README.md`](data/README.md) for loader and mock API usage.
-
-## Triage and model downloads
-
-The separate `triage/` package requires no API key. Interactive Broker-Triage uses local rules by default and can optionally call OpenRouter when a key is configured; see [`agents/README.md`](agents/README.md). Embedding and transformer inference run locally. Public model downloads are disabled by default; cache the model locally or explicitly enable a one-time download with `TRIAGE_ALLOW_MODEL_DOWNLOAD=true`. The TF-IDF + calibrated LinearSVC baseline is local and does not require pretrained weights. See [`triage/README.md`](triage/README.md).
-
-## Reproducible evaluation
-
-The evaluation harness runs A0 (rule-based), A1 (single-agent), A2 (static MAS), and A3 (mobile MAS) over the same generated tickets: 100 per seed for seeds 42–46, so 500 per arm. It writes a timestamped result folder containing configuration, per-ticket/per-stage CSVs, security injection results, descriptive summaries, paired statistical tests (Wilcoxon, Friedman/Nemenyi, Cliff's delta, Holm-Bonferroni), BAB 9.4 Markdown, ROC data, and plots.
-
-With GNU Make:
-
-```sh
-python -m pip install -r eval/requirements.txt
-make eval
-```
-
-Equivalent command when GNU Make is unavailable:
-
-```sh
-python -m eval.runner --config eval/config.json --output-root results
-```
-
-The generated resource measurements are host observations; token counts and synthetic DORA/deployment outcomes are estimates or simulations. They are labelled in the outputs and explained in [`eval/README.md`](eval/README.md).
-
-## Other experiments
-
-Train and evaluate the reinforcement-learning policies:
-
-```sh
-python -m pip install -r envs/requirements.txt
-python -m envs.train_rl --seed 42 --timesteps 20000 --output-dir rl_outputs
-python -m envs.eval_rl --seed 42 --models-dir rl_outputs/models --output-dir rl_outputs/evaluation
-```
-
-The RCA module provides seeded synthetic incidents and tests for the numeric fixture. Data loaders and preprocessing commands are documented in their module READMEs.
+Results land in a timestamped folder: per-ticket and per-stage CSVs, statistical tests, security-injection results, the BAB 9.4 table and charts. Timings and memory are measurements from your machine and vary. Token counts and deployment outcomes are estimates and simulations, and are labelled as such. See [eval/README.md](eval/README.md) and the limitations in [docs/AUDIT.md](docs/AUDIT.md).
 
 ## Checks
 
-Run module checks independently:
-
-```sh
-python -m pytest agents/tests -q
-python -m pytest triage/tests -q
-python -m pytest rca/tests -q
-python -m pytest envs/tests -q
+```powershell
+python -m pytest agents/tests triage/tests rca/tests envs/tests -q   # or: make test
+cd frontend; npm test; npm run build
 ```
+
+## Words used in the dashboard
+
+| Term | Meaning |
+|---|---|
+| τ / R_max | The minimum confidence (0.70) and the maximum risk (0.60) for an agent to act alone |
+| Duplicate bands | Similarity ≥ 0.85 links to the original; 0.70–0.85 asks a person; lower is a new ticket |
+| Contract Net | An auction: squads bid with skill, load and cost; the best utility wins the ticket |
+| Mobile agent | Code that travels to the data (the report's rule: when L > (A + R) × 3) and brings back only aggregates |
+| Canary | Releasing to 5% of users first; it starts on its own only when the release risk is ≤ 0.30 |
+| NAPFD | How early the test run found the failing tests (1.0 = immediately) |
+| SLO | The service level a service must meet; monitoring compares against it |
 
 ## Known limitations
 
-- Several comparisons use synthetic tickets, failure labels, deployment outcomes, and dashboard data; results are for coursework, not operational claims.
-- Wall-clock, CPU, and memory measurements can vary by machine even with fixed seeds.
-- The mobile runtime demonstrates signed bundles and container limits but does not provide a hardened isolation boundary for arbitrary code.
-- The interactive pipeline records a complete prototype trace, but investigation is heuristic, implementation only drafts a request, QA has no connected CI runner, and deployment/monitoring do not connect to production systems. The ML, graph RCA, and RL experiments remain separate modules rather than one composed production workflow.
-- The performance dashboard and conversation walkthrough are explicitly labeled examples. Ticket overview and human reviews use actual sandbox run state. Active runs are held in backend memory; persisted audit history survives a backend restart, but those old runs cannot be resumed.
+- **Simulated tools.** Planning, implementation, QA, deployment and monitoring use seeded simulators, not real tools. Node logs are simulated too, although the trips to the nodes, the signatures and the egress checks are real.
+- **Evaluation tickets.** The evaluation tickets contain their severity word, so severity accuracy is 1.0 for every set-up. This is kept so the report's numbers stay reproducible; see the audit.
+- **Lexical duplicate search.** The live duplicate search is lexical, so it misses an Indonesian and an English report of the same problem.
+- **Unauthenticated reviewers.** Approvals record a reviewer name, not a logged-in identity.
+- **Local-mode memory.** Active runs live in memory. Saved audit history survives a restart in Docker mode, but old runs cannot be resumed.
+- **Not an isolation boundary.** Mobile bundles are signed and time-limited, but run as Python inside the node container. Do not expose the demo to untrusted networks.

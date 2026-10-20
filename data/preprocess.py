@@ -9,9 +9,10 @@ from pathlib import Path
 
 import pandas as pd
 
+from agents.pii import mask_text
 
-EMAIL_RE = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I)
-PHONE_RE = re.compile(r"(?<!\w)(?:\+?\d[\d().\s-]{7,}\d)(?!\w)")
+# E-mail and phone masking is shared with the live agents (agents/pii.py); these extra
+# token patterns also catch GitHub and AWS keys found in bug-report exports.
 TOKEN_PATTERNS = [
     re.compile(r"\bBearer\s+[A-Za-z0-9._~+/-]+=*", re.I),
     re.compile(r"\b(?:api[_-]?key|access[_-]?token|secret|token)\s*[:=]\s*['\"]?[^\s,'\"]+", re.I),
@@ -43,13 +44,13 @@ def clean_repeated_stack_lines(text: str) -> str:
 
 def clean_text(value: object) -> str:
     text = clean_repeated_stack_lines(str(value or ""))
-    text = VERSION_RE.sub(lambda m: f"{m.group(1) or ''}<VERSION>", text)
-    text = BUILD_RE.sub("build <BUILD>", text)
-    text = EMAIL_RE.sub("<EMAIL>", text)
-    text = PHONE_RE.sub("<PHONE>", text)
+    # Personal data first: otherwise the version rule could split "john.2.0@corp.io"
+    # before the e-mail rule sees it, leaking part of the address.
+    text = mask_text(text)
     for pattern in TOKEN_PATTERNS:
         text = pattern.sub("<TOKEN>", text)
-    return text
+    text = VERSION_RE.sub(lambda m: f"{m.group(1) or ''}<VERSION>", text)
+    return BUILD_RE.sub("build <BUILD>", text)
 
 
 def stable_dataset_version(frame: pd.DataFrame) -> str:

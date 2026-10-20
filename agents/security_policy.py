@@ -1,11 +1,14 @@
-"""Classroom security checks: signed bundles, result allowlists, and autonomy gate."""
+"""Security-Policy agent checks: signed bundles, result allowlists, secret scans and the autonomy gate."""
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-RISK_BY_CLASS = {"Low": 0.1, "Medium": 0.3, "High": 0.6, "Critical": 1.0}
+from triage import gate as shared_gate
+
+# One risk table for the whole project; the evaluation harness imports the same one.
+RISK_BY_CLASS = shared_gate.RISK_BY_CLASS
 SECRET_PATTERNS = (
     re.compile(r"""(?i)(api[_-]?key|(?:access[_-]?)?token|secret|password)\s*[:=]\s*['"]?[^\s'"]{8,}"""),
     re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
@@ -15,7 +18,7 @@ SECRET_PATTERNS = (
 # Only aggregate fields may cross a production-node boundary.
 DEFAULT_EGRESS_FIELDS = frozenset({
     "service", "latency_p50_ms", "latency_p95_ms", "error_rate",
-    "cpu_z", "mem_z", "saturation_z", "request_count", "latency_p95_ms", "evidence_hash",
+    "cpu_z", "mem_z", "saturation_z", "request_count", "evidence_hash",
 })
 
 
@@ -26,6 +29,18 @@ class SecurityError(ValueError):
 def scan_for_secrets(value: Any) -> bool:
     """Return True if a string representation contains a likely secret."""
     return any(pattern.search(str(value)) for pattern in SECRET_PATTERNS)
+
+
+def find_secrets(text: str) -> list[str]:
+    """Return a short, redacted description of each secret-like match (for review evidence)."""
+    findings = []
+    for line_number, line in enumerate(str(text).splitlines(), start=1):
+        for pattern in SECRET_PATTERNS:
+            match = pattern.search(line)
+            if match:
+                findings.append(f"line {line_number}: {match.group(0)[:12]}… (redacted)")
+                break
+    return findings
 
 
 def validate_egress(result: Mapping[str, Any], allowed_fields: frozenset[str] = DEFAULT_EGRESS_FIELDS) -> dict[str, Any]:
@@ -65,12 +80,15 @@ class GateDecision:
 
 
 def evaluate_gate(probability: float, risk_class: str, tau: float = 0.70, risk_max: float = 0.60) -> GateDecision:
-    """Apply P >= tau AND risk <= risk_max; otherwise require human review."""
+    """Apply P >= tau AND risk <= risk_max; otherwise require human review.
+
+    The rule itself lives in triage/gate.py so the live agents and the evaluation
+    harness share one implementation; this wrapper keeps the simpler signature.
+    """
     if not 0.0 <= probability <= 1.0:
         raise ValueError("probability must be in [0, 1]")
     if risk_class not in RISK_BY_CLASS:
         raise ValueError(f"unknown risk class: {risk_class}")
-    risk = RISK_BY_CLASS[risk_class]
-    passed = probability >= tau and risk <= risk_max
-    reason = "autonomous" if passed else ("low_confidence" if probability < tau else "risk_too_high")
-    return GateDecision(passed, reason, risk)
+    shared = shared_gate.evaluate_gate({risk_class: probability}, tau=tau, risk_max=risk_max)
+    reason = "autonomous" if shared.autonomous else ("low_confidence" if probability < tau else "risk_too_high")
+    return GateDecision(shared.autonomous, reason, shared.risk)

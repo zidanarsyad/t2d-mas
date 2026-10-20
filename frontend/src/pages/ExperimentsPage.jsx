@@ -1,110 +1,332 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDownRight, BarChart3, FlaskConical, History, Network, RotateCcw, Timer } from "lucide-react";
-import { Heading, Panel, SectionTitle } from "../components/Primitives";
+import { BarChart3, CircleCheck, CircleX, FlaskConical, ListChecks } from "lucide-react";
+import { api, isUnavailable } from "../api";
+import Term from "../components/Term";
+import { EmptyState, Heading, Notice, Panel, SectionTitle, Severity, Tabs, Tag, tabPanelProps } from "../components/Primitives";
+import { armProcesses } from "../data/reportExamples.js";
+import { barWidth, experimentMetrics, formatBytes, formatNumber, formatRunLabel, formatTime } from "../lib/format.js";
 
-const format = (value, digits = 2) => Number.isFinite(Number(value)) ? Number(value).toFixed(digits) : "—";
-const arms = ["A0", "A1", "A2", "A3"];
-const processes = [
-  {
-    id: "A0",
-    name: "Rules and manual work",
-    description: "A reference point: simple rules help sort issues, and people handle the rest.",
-    note: "One process; no messages between agents.",
-    steps: ["Ticket arrives", "Rules check it", "People route and investigate", "People review key decisions"],
-  },
-  {
-    id: "A1",
-    name: "One assistant",
-    description: "One AI assistant takes on the full set of software delivery tasks.",
-    note: "Tests whether one assistant is enough for the whole journey.",
-    steps: ["Ticket arrives", "One assistant handles each task", "One recommendation is prepared", "People review key decisions"],
-  },
-  {
-    id: "A2",
-    name: "Specialist assistants",
-    description: "Separate assistants focus on tasks such as triage, investigation, and quality checks.",
-    note: "The specialists stay on the central system and pass messages.",
-    steps: ["Ticket arrives", "Specialists split the work", "Central system connects results", "People review key decisions"],
-  },
-  {
-    id: "A3",
-    name: "Specialists that visit the data",
-    description: "Like A2, with a Scout that can run its investigation beside local log data.",
-    note: "Only approved summary fields return; the raw log data stays at its source.",
-    steps: ["Ticket arrives", "Specialists split the work", "Scout visits local data", "Summary returns for review"],
-  },
-];
+const ARMS = ["A0", "A1", "A2", "A3"];
+const KIND_TAG = { measured: { tone: "green", label: "measured" }, score: { tone: "blue", label: "scored" }, simulated: { tone: "violet", label: "simulated" } };
+const METRIC_TERMS = { macro_f1_severity: "macro-f1", mean_recall_at_5: "recall-at-5", napfd_mean: "napfd" };
 
-function ProcessVisualizations() {
-  return <section className="experiment-process-section" aria-label="How the four approaches work">
-    <SectionTitle title="How the four approaches work" detail="A0–A3 are four benchmark designs, not four agent roles."/>
-    <p className="experiment-process-intro">Each follows the same ticket-to-release idea. The difference is how work is organized and where investigation happens. These diagrams explain the designs; they are not live traces of a ticket run.</p>
-    <div className="experiment-process-grid">
-      {processes.map((process) => <Panel className={`experiment-process-card process-${process.id.toLowerCase()}`} key={process.id}>
-        <div className="experiment-process-heading"><span className={`experiment-arm arm-${process.id.toLowerCase()}`}>{process.id}</span><div><h3>{process.name}</h3><p>{process.description}</p></div></div>
-        <ol className="experiment-process-flow" aria-label={`${process.id} process`}>
-          {process.steps.map((step, index) => <li key={step}><span>{String(index + 1).padStart(2, "0")}</span><b>{step}</b></li>)}
-        </ol>
-        <small className="experiment-process-note">{process.note}</small>
-      </Panel>)}
-    </div>
-    <div className="experiment-governance-note"><b>Human approval stays in the design.</b><span>The prototype always pauses for change review and release approval, and pauses at triage when confidence is low or risk is high. Repository merges and production releases are not connected.</span></div>
-  </section>;
-}
-
-export default function ExperimentsPage({ onNavigate }) {
-  const [runs, setRuns] = useState([]);
+export default function ExperimentsPage({ workspace, sub }) {
+  const [tab, setTab] = useState(sub === "samples" ? "samples" : "results");
+  const [runs, setRuns] = useState({ items: [], loading: true, error: "", offline: false });
   const [runId, setRunId] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
 
   useEffect(() => {
     let active = true;
-    fetch("/api/experiments").then(response => {
-      if (!response.ok) throw new Error("Could not load experiment results.");
-      return response.json();
-    }).then(data => {
-      if (!active) return;
-      setRuns(data.runs || []);
-      if (data.runs?.length) setRunId(data.runs[0].run_id);
-    }).catch(() => active && setError("Could not reach saved results. Start the project demo service, then try again."))
-      .finally(() => active && setLoading(false));
-    return () => { active = false; };
-  }, []);
+    api
+      .experiments()
+      .then((items) => {
+        if (!active) return;
+        setRuns({ items, loading: false, error: "", offline: false });
+        setRunId((current) => current || items[0]?.run_id || "");
+      })
+      .catch((err) => active && setRuns({ items: [], loading: false, error: err.message, offline: isUnavailable(err) }));
+    return () => {
+      active = false;
+    };
+  }, [workspace.mode]);
 
-  const selected = useMemo(() => runs.find(run => run.run_id === runId), [runs, runId]);
-  const summaries = useMemo(() => {
-    const rows = selected?.arms || [];
-    return arms.map(arm => rows.find(row => row.arm === arm)).filter(Boolean);
-  }, [selected]);
-  const totalTickets = selected?.arms?.[0]?.ticket_count ? Number(selected.arms[0].ticket_count) : 0;
+  const run = runs.items.find((item) => item.run_id === runId);
 
-  return <div className="page-wrap">
-    <Heading eyebrow="Compare four system designs" title="How do the approaches compare?" subtitle="See how A0–A3 organize the work, then compare their results on the same sample tickets." action={<button className="button secondary" onClick={() => onNavigate("history")}><History size={15}/>View ticket history</button>}/>
-    <Panel className="experiment-note"><FlaskConical size={16}/><span><b>Classroom simulation</b><small>The tickets are computer-generated examples. Time reflects the run machine; deployment outcomes are simulated. These figures describe this experiment, not expected production performance.</small></span></Panel>
-
-    <ProcessVisualizations/>
-    <div className="experiment-score-guide"><b>How to read the scores</b><span>Severity match and early-test scores range from 0 to 1; higher is better. Similar issues is the share of tickets with a known duplicate where its matching issue appeared in the first five suggestions. Lead time and rollback are simulated; time and data transfer come from this run.</span></div>
-
-    {error && <Panel className="experiment-empty"><b>Saved results are unavailable</b><span>{error}</span></Panel>}
-    {!error && loading && <Panel className="experiment-empty" role="status">Loading saved results…</Panel>}
-    {!error && !loading && !runs.length && <Panel className="experiment-empty"><b>No saved comparison runs yet</b><span>Run the project's evaluation once to create results for this screen.</span></Panel>}
-    {selected && <>
-      <div className="experiment-toolbar"><label>Saved comparison<select value={runId} onChange={event => setRunId(event.target.value)}>{runs.map(run => <option key={run.run_id} value={run.run_id}>{run.run_id} · {run.dataset_version}</option>)}</select></label><span>Sample set <b>{selected.dataset_version}</b></span></div>
-      <div className="experiment-meta">{totalTickets} tickets per approach{selected.seeds?.length > 1 && <> ({selected.seeds.length} generated sets of {selected.tickets_per_seed})</>}<span>·</span>Same tickets used for all four approaches</div>
-      <div className="experiment-grid">{summaries.map(row => <Panel className={`experiment-card process-${row.arm.toLowerCase()}`} key={row.arm}>
-        <div className="experiment-card-title"><span className={`experiment-arm arm-${row.arm.toLowerCase()}`}>{row.arm}</span><div><b>{row.arm_description}</b><small>{row.ticket_count} ticket evaluations</small></div></div>
-        <div className="experiment-metrics">
-          <span title="Macro-F1: a score for how well severity labels match the sample labels."><small>Severity match</small><b>{format(row.macro_f1_severity)}</b></span>
-          <span title="Recall at five: how often a matching issue appears among the first five suggestions."><small>Similar issues found</small><b>{format(Number(row.mean_recall_at_5) * 100, 1)}%</b></span>
-          <span title="NAPFD: how early the test order finds failures; higher is better."><small>Test failures found early</small><b>{format(row.napfd_mean)}</b></span>
-          <span title="Simulated estimate; no real deployment service is connected."><small>Simulated lead time</small><b>{format(row.lead_time_hours_mean)} h</b></span>
-          <span title="Simulated rollback rate."><small>Simulated rollback</small><b>{format(Number(row.change_failure_rate) * 100, 1)}%</b></span>
-          <span title="Bytes recorded by this run on its sample workload."><small>Data sent per ticket</small><b>{Number(row.network_bytes_mean).toLocaleString()} bytes</b></span>
+  return (
+    <div className="page">
+      <Heading
+        eyebrow="Experiment results"
+        title="What did A0–A3 measure?"
+        what="The saved evaluation: four system designs run on the same seeded synthetic tickets, five seeds × 100 tickets."
+        why="It is the evidence behind the report's comparison, with measured, scored and simulated numbers kept apart."
+      />
+      {runs.offline && (
+        <Notice tone="warn" title="Saved results need the backend">
+          They are read from the <code>results/</code> folder by the API. The four designs are explained below.
+        </Notice>
+      )}
+      {!runs.offline && runs.error && <Notice tone="bad" title="Results could not be loaded">{runs.error}</Notice>}
+      {runs.items.length > 0 && (
+        <div className="toolbar">
+          <label className="field field-inline">
+            <span>Saved run</span>
+            <select value={runId} onChange={(event) => setRunId(event.target.value)}>
+              {runs.items.map((item) => (
+                <option key={item.run_id} value={item.run_id}>
+                  {formatRunLabel(item)}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
-      </Panel>)}</div>
-      <Panel className="experiment-table-panel"><SectionTitle title="Compare the recorded results" detail="Higher severity and early-test scores are better. Time and data transfer use the selected run's measurements."/><div className="experiment-table-wrap"><table className="experiment-table"><thead><tr><th>Approach</th><th>Tickets</th><th><Timer size={12}/>Time per ticket</th><th><BarChart3 size={12}/>Severity match</th><th><ArrowDownRight size={12}/>Failures found early</th><th><Network size={12}/>Data sent / ticket</th><th><RotateCcw size={12}/>Rollback</th></tr></thead><tbody>{summaries.map(row=><tr key={row.arm}><td><span className={`experiment-arm arm-${row.arm.toLowerCase()}`}>{row.arm}</span> {row.arm_description}</td><td>{row.ticket_count}</td><td>{format(Number(row.wall_time_mean_s) * 1000, 3)} ms</td><td>{format(row.macro_f1_severity)}</td><td>{format(row.napfd_mean)}</td><td>{Number(row.network_bytes_mean).toLocaleString()} bytes</td><td>{format(Number(row.rollback_rate) * 100, 1)}%</td></tr>)}</tbody></table></div></Panel>
-      <p className="experiment-footnote">{selected.measurement_note}</p>
-    </>}
-  </div>;
+      )}
+      <Tabs
+        tabs={[
+          { id: "results", label: "Results", icon: BarChart3 },
+          { id: "samples", label: "Sample tickets", icon: ListChecks },
+        ]}
+        value={tab}
+        onChange={setTab}
+        label="Experiment views"
+        idPrefix="experiments"
+      />
+      <div {...tabPanelProps("experiments", tab)}>{tab === "results" ? <Results run={run} loading={runs.loading} /> : <SampleTickets run={run} offline={runs.offline} />}</div>
+    </div>
+  );
+}
+
+function Results({ run, loading }) {
+  const rows = ARMS.map((arm) => run?.arms?.find((row) => row.arm === arm)).filter(Boolean);
+  const max = (key) => Math.max(...rows.map((row) => Number(row[key]) || 0));
+  return (
+    <div className="stack">
+      {loading && (
+        <p className="muted" role="status">
+          Loading saved results…
+        </p>
+      )}
+      {run && (
+        <>
+          <p className="muted">
+            {rows[0]?.ticket_count ? `${formatNumber(rows[0].ticket_count)} ticket evaluations per design` : ""}
+            {run.seeds?.length ? ` · seeds ${run.seeds.join(", ")}` : ""} · the same tickets for every design.
+          </p>
+          <div className="arm-grid">
+            {rows.map((row) => (
+              <Panel key={row.arm} className={`arm-card arm-${row.arm.toLowerCase()}`}>
+                <div className="arm-card-head">
+                  <span className={`arm-badge arm-${row.arm.toLowerCase()}`}>{row.arm}</span>
+                  <b>{row.arm_description}</b>
+                </div>
+                <dl className="arm-metrics">
+                  {experimentMetrics.map((metric) => (
+                    <div key={metric.key}>
+                      <dt>
+                        {METRIC_TERMS[metric.key] ? <Term id={METRIC_TERMS[metric.key]}>{metric.label}</Term> : metric.label}
+                        <Tag tone={KIND_TAG[metric.kind].tone}>{KIND_TAG[metric.kind].label}</Tag>
+                      </dt>
+                      <dd>
+                        {metric.format(row[metric.key])}
+                        {["network_bytes_mean", "wall_time_mean_s"].includes(metric.key) && (
+                          <span className="bar" aria-hidden="true">
+                            <i style={{ width: barWidth(row[metric.key], max(metric.key)) }} />
+                          </span>
+                        )}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </Panel>
+            ))}
+          </div>
+          <Panel>
+            <SectionTitle title="Side by side" detail="Higher is better for the scores; lower is better for time, data and rollbacks." level={3} />
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th scope="col">Design</th>
+                    {experimentMetrics.map((metric) => (
+                      <th scope="col" key={metric.key}>
+                        {metric.label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <tr key={row.arm}>
+                      <th scope="row">
+                        <span className={`arm-badge arm-${row.arm.toLowerCase()}`}>{row.arm}</span> {row.arm_description}
+                      </th>
+                      {experimentMetrics.map((metric) => (
+                        <td key={metric.key}>{metric.format(row[metric.key])}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="muted small">{run.measurement_note}</p>
+            <p className="muted small">
+              Known limitation: the synthetic tickets contain the severity word, so severity accuracy is 1.0 for every design. Duplicates found counts tickets whose known duplicate is in the first
+              five suggestions.
+            </p>
+          </Panel>
+        </>
+      )}
+      <Panel>
+        <SectionTitle title="The four designs" detail={<>A0–A3 are four ways to organise the same work, not four agents (<Term id="arms">A0–A3</Term>).</>} />
+        <div className="arm-grid">
+          {armProcesses.map((process) => (
+            <div key={process.id} className={`arm-process arm-${process.id.toLowerCase()}`}>
+              <div className="arm-card-head">
+                <span className={`arm-badge arm-${process.id.toLowerCase()}`}>{process.id}</span>
+                <b>{process.name}</b>
+              </div>
+              <p className="muted small">{process.description}</p>
+              <ol className="arm-steps">
+                {process.steps.map((step) => (
+                  <li key={step}>{step}</li>
+                ))}
+              </ol>
+              <small className="muted">{process.note}</small>
+            </div>
+          ))}
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+function SampleTickets({ run, offline }) {
+  const [severity, setSeverity] = useState("all");
+  const [state, setState] = useState({ data: null, loading: false, error: "" });
+  const [selectedKey, setSelectedKey] = useState("");
+  const [arm, setArm] = useState("A3");
+
+  useEffect(() => {
+    if (!run) return undefined;
+    let active = true;
+    setState({ data: null, loading: true, error: "" });
+    api
+      .evalHistory({ runId: run.run_id, severity: severity === "all" ? "Low,Medium,High,Critical" : severity })
+      .then((data) => {
+        if (!active) return;
+        setState({ data, loading: false, error: "" });
+        setSelectedKey((current) => (data.items.some((item) => `${item.seed}:${item.ticket_id}` === current) ? current : data.items[0] ? `${data.items[0].seed}:${data.items[0].ticket_id}` : ""));
+      })
+      .catch((err) => active && setState({ data: null, loading: false, error: err.message }));
+    return () => {
+      active = false;
+    };
+  }, [run, severity]);
+
+  const selected = useMemo(() => state.data?.items.find((item) => `${item.seed}:${item.ticket_id}` === selectedKey), [state.data, selectedKey]);
+  const armData = selected?.arms?.[arm];
+  if (offline) return <EmptyState icon={FlaskConical} title="Sample tickets need the backend">They come from the saved evaluation run.</EmptyState>;
+  if (!run) return null;
+
+  return (
+    <div className="stack">
+      <div className="toolbar">
+        <label className="field field-inline">
+          <span>Severity</span>
+          <select value={severity} onChange={(event) => setSeverity(event.target.value)}>
+            <option value="all">All severities</option>
+            {["Low", "Medium", "High", "Critical"].map((value) => (
+              <option key={value}>{value}</option>
+            ))}
+          </select>
+        </label>
+        {state.data && (
+          <span className="muted small">
+            Showing {state.data.total} of {state.data.matching_total} synthetic tickets (a severity-balanced sample of at most 50).
+          </span>
+        )}
+      </div>
+      {state.loading && (
+        <p className="muted" role="status">
+          Loading sample tickets…
+        </p>
+      )}
+      {state.error && <Notice tone="bad" title="Sample tickets could not be loaded">{state.error}</Notice>}
+      {state.data && (
+        <div className="split">
+          <Panel className="list-panel">
+            <ul className="plain-list saved-list">
+              {state.data.items.map((item) => {
+                const key = `${item.seed}:${item.ticket_id}`;
+                return (
+                  <li key={key}>
+                    <button type="button" className={`list-button ${key === selectedKey ? "is-selected" : ""}`} aria-pressed={key === selectedKey} onClick={() => setSelectedKey(key)}>
+                      <span>
+                        <b>
+                          {item.ticket_id} <small>seed {item.seed}</small>
+                        </b>
+                        <small>{item.title}</small>
+                      </span>
+                      <Severity value={item.severity} />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </Panel>
+          {selected && (
+            <Panel className="detail-panel">
+              <p className="eyebrow">
+                Seed {selected.seed} · {selected.component || "synthetic"}
+                {selected.created_at ? ` · ${formatTime(selected.created_at, { date: true, seconds: false })}` : ""}
+              </p>
+              <h2>{selected.title || selected.ticket_id}</h2>
+              <blockquote className="original-text">{selected.body || "The original text is not available for this run."}</blockquote>
+              {selected.duplicate_of && <p className="muted">Known duplicate of {selected.duplicate_of}.</p>}
+              <label className="field field-inline">
+                <span>Design</span>
+                <select value={arm} onChange={(event) => setArm(event.target.value)}>
+                  {ARMS.filter((value) => selected.arms[value]).map((value) => (
+                    <option key={value} value={value}>
+                      {value} · {selected.arms[value].arm_description}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {armData && (
+                <>
+                  <dl className="facts">
+                    <div>
+                      <dt>Predicted severity</dt>
+                      <dd>
+                        <Severity value={armData.severity_predicted} /> {formatNumber(armData.severity_confidence * 100, 1)}% confidence
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Deployment (simulated)</dt>
+                      <dd>
+                        {armData.deployment_success ? (
+                          <span className="text-ok">
+                            <CircleCheck size={14} aria-hidden="true" /> succeeded
+                          </span>
+                        ) : (
+                          <span className="text-bad">
+                            <CircleX size={14} aria-hidden="true" /> failed
+                          </span>
+                        )}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Lead time (simulated)</dt>
+                      <dd>{formatNumber(armData.lead_time_hours, 2)} h</dd>
+                    </div>
+                    <div>
+                      <dt>Data and messages</dt>
+                      <dd>
+                        {formatBytes(armData.network_bytes)} · {armData.messages} messages
+                      </dd>
+                    </div>
+                    {armData.review_decision !== "not_required" && (
+                      <div>
+                        <dt>Synthetic review</dt>
+                        <dd>
+                          {armData.review_decision}: {armData.review_note}
+                        </dd>
+                      </div>
+                    )}
+                  </dl>
+                  <ol className="plain-numbered eval-stages">
+                    {armData.stages.map((stage) => (
+                      <li key={stage.stage}>
+                        <b>{stage.stage}</b> {formatNumber(stage.wall_time_seconds * 1000, 3)} ms · {formatBytes(stage.network_bytes)} · {stage.messages} messages
+                      </li>
+                    ))}
+                  </ol>
+                </>
+              )}
+            </Panel>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }

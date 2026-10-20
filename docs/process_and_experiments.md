@@ -4,13 +4,13 @@ This document describes the implemented course prototype from ticket intake thro
 
 ## 1. Project objective and guardrails
 
-T2D-MAS explores a ticket-to-development pipeline coordinated by software agents. The intended flow covers intake, triage, assignment, investigation, planning, implementation, QA, deployment, and monitoring. The interactive prototype records heuristic results, drafts, human reviews, and simulated release/monitoring outputs; it does not modify a repository, execute CI, or deploy to production.
+T2D-MAS explores a ticket-to-deployment pipeline coordinated by software agents. The flow covers feedback capture (intake), triage, assignment, investigation, planning, implementation, QA, deployment, and monitoring, with a feedback loop from monitoring back to triage. In the interactive prototype every stage is run by an agent; where no real system exists (repository, CI runner, cluster, telemetry) the agent calls a seeded simulator and labels its output as simulated. It never modifies a real repository or deploys to production. [AUDIT.md](AUDIT.md) compares each stage with the original idea.
 
 The project keeps four system rules visible throughout that flow:
 
 1. **Human approval is required for irreversible actions.** Merge and full-deployment callbacks are blocked without `human_approved=True`.
-2. **Agent decisions are auditable.** Actions, escalations, and approval decisions are appended to `audit_log`; the PostgreSQL schema rejects audit-row updates and deletes.
-3. **Mobile-demo inputs stay local.** The signed node demo uses synthetic inputs and returns only allowlisted aggregate fields; production telemetry is not connected.
+2. **Agent decisions are auditable.** Agent outputs, gate decisions, messages, approvals and blocked actions are appended to `audit_log`; the PostgreSQL schema rejects UPDATE, DELETE and TRUNCATE on it.
+3. **Raw data stays on the nodes.** Each data node keeps its own (simulated) service logs; the Scout-Log agent runs signed code next to them or asks the node's exporter, and only allowlisted aggregate fields come back.
 4. **Experiments are seeded.** Synthetic inputs and algorithmic choices are controlled by fixed seeds (seeds 42–46 for the four-arm harness, seed 42 for the RL commands) and written with dataset-version metadata. Timings and resource measurements are host observations and can vary between runs.
 
 The autonomy gate is:
@@ -53,11 +53,11 @@ The `triage/` package has four pieces:
 - **Severity:** the baseline is TF-IDF plus `LinearSVC`, calibrated with Platt sigmoid calibration. An optional DistilBERT fine-tuning path uses Hugging Face Trainer and returns softmax probabilities.
 - **Gate:** predicted class confidence and risk are combined using the autonomy rule above. The decision contains the selected class, confidence, risk, thresholds, and whether to proceed or escalate.
 
-The separate `triage/` package does not require API keys. Interactive Broker-Triage uses local rules by default, with optional OpenRouter proposals when a key is configured. Those proposals remain below the autonomy confidence threshold and require review. See [`triage/README.md`](../triage/README.md) for local model cache and optional download behavior.
+The separate `triage/` package does not require API keys and is run offline. The live Broker-Triage agent uses a lighter version of the same two steps: duplicate search with TF-IDF over character 3–5-grams and cosine similarity (same bands), and local severity rules in English and Indonesian, with optional OpenRouter proposals (free models only) when a key is configured. Those proposals remain below the autonomy confidence threshold and require review. See [`triage/README.md`](../triage/README.md) for local model cache and optional download behavior.
 
 ### 2.3 Agent roles and collaboration
 
-Agents share the abstract lifecycle `perceive()`, `remember()`, `reason()`, `act()`, and `report()`. Each agent records its action through an audit sink. The four project archetypes have these intended responsibilities:
+Every live agent runs the five-step cycle `perceive()`, `remember()`, `reason()`, `act()`, `report()` defined in [`agents/stage_agent.py`](../agents/stage_agent.py); its output lists the five steps in plain words, and the pipeline writes it to the audit log. The four archetypes are grouped in code as in the report (`scouts.py`, `brokers.py`, `workers.py`, `security_policy.py`):
 
 | Archetype | Main responsibility in the pipeline |
 |---|---|
@@ -66,7 +66,7 @@ Agents share the abstract lifecycle `perceive()`, `remember()`, `reason()`, `act
 | Worker | Investigate, plan, implement, and run tests |
 | Security | Check policy, secrets, signatures, egress fields, and approval requirements |
 
-The Redis Streams bus transports FIPA-ACL-style messages with performative, correlation ID, content, policy context, and signature fields. Consumer groups allow multiple workers to read messages in parallel. Contract Net assignment sends a call for proposals, gathers bids until a deadline, then accepts the highest utility:
+The Redis Streams bus carries FIPA-ACL-style messages with performative, correlation ID, content and policy context (a `signature` field is reserved and left empty; only mobile bundles are signed). The stream is the shared, bounded conversation log that the dashboard replays. Contract Net assignment sends a call for proposals to three investigation squads, gathers bids until a deadline, then awards the ticket to the highest utility; the winner really investigates it:
 
 ```text
 U = 0.5 * skill + 0.3 * (1 - load) + 0.2 * (1 - cost)
@@ -86,15 +86,15 @@ The orchestrator advances one ticket at a time through these stages:
 8. Deployment
 9. Monitoring
 
-There are two fixed blocking checkpoints: pull-request review/merge after QA (`pr_merge`) and release sign-off at deployment (`release_signoff`), defined in `CHECKPOINTS` in [`agents/orchestrator.py`](../agents/orchestrator.py). Triage has no fixed sign-off: it pauses only when the autonomy gate escalates, that is, when confidence is below `tau` or risk is above `risk_max` (every Critical prediction). Either kind of pause creates an approval-queue entry and the ticket cannot advance until a person approves it. Rejection stops the run; it cannot be resumed. Start a new run to reconsider the issue. Approval applies to the next transition; it is not a blanket authorization for later irreversible actions.
+Six gates can pause a ticket. Two always do: pull-request review after QA (`pr_merge`) and release sign-off at deployment (`release_signoff`); the orchestrator adds these itself even if an agent forgot to ask. Four pause only when their rule triggers: `duplicate_review` (similarity 0.70–0.85), `autonomy_gate` (confidence below `tau` or risk above `risk_max`, so every Critical prediction), `secret_scan` (a secret in the draft change; it can only be redrafted or stopped) and `canary_review` (release risk score above 0.30). A pause creates an approval-queue entry; the reviewer can approve, request changes or reject, always with a reason. Rejection stops the run for good. Approval applies to the current stage only.
 
-Merge and full-deployment callbacks are separately protected by `perform_irreversible()`, which checks the explicit human approval flag again and writes an audit record before execution.
+Merge and full deployment run through `execute_irreversible()`, which looks up the recorded approval for that gate, writes an audit record and only then performs the action; the `code_changes` and `deployments` tables refuse the same writes without `human_approved` (and so does the in-memory store used in local mode).
 
 ### 2.5 Static and mobile execution
 
-Static agents process data where they run. A mobile agent instead packages code and small state into a signed Ed25519 bundle and sends it to a node runtime. The runtime verifies the signature, executes the demonstration code inside a limited container, and returns only allowlisted aggregate results. The example migration rule is `L_node > (A + R) * 3`, where `L_node` is local data/log volume, `A` is agent bundle size, and `R` is expected return volume.
+Static agents process data where they run. During investigation, the Scout-Log mobile agent visits all six data nodes. For each node it applies the report's rule `L_node > (A + R) * 3` (`L_node` the node's log volume, `A` = 12 MB agent bundle, `R` = 2 MB result): above the 42 MB threshold it packages its analysis code into a signed Ed25519 bundle that the node verifies and runs next to its own logs; below it, it asks the node's built-in exporter. Either way only allowlisted aggregate fields return, and the investigator ranks the services on the call chain with the report's GraphSAGE-mean calculation.
 
-The Compose demo provides one orchestrator, six node containers, Redis, and PostgreSQL. This demonstrates transport, signing, auditing, and aggregate egress. It is not a hardened isolation boundary for arbitrary untrusted code.
+The Compose demo provides one orchestrator, six node containers, Redis, and PostgreSQL; without Docker the same nodes run in-process (local mode). This demonstrates transport, signing, auditing, and aggregate egress. It is not a hardened isolation boundary for arbitrary untrusted code.
 
 ### 2.6 CI, canary release, and dashboard
 
@@ -105,7 +105,7 @@ The `envs/` package provides two seeded Gymnasium environments:
 
 PPO is trained for test prioritization and canary choices; DQN is trained for the discrete canary environment. Offline canary training explicitly supplies simulated approval so algorithms can explore full rollout. The regular environment does not infer approval from an agent action.
 
-The React dashboard has ten views: Project overview, Ticket overview, Agent conversations, Run a ticket, Human reviews, Decision trail, Ticket history, Meet the agents, Performance example, and Experiment results. Current runs share backend snapshots and recover messages from Redis history and server-sent events. Performance and conversation examples are explicitly labeled; experiment results read saved benchmark files. Agent roles describe configured responsibilities rather than fabricated live host health.
+The React dashboard shows the live pipeline with animations (the ticket moving through the stages, agent messages, the mobile agent's trip, monitoring and the feedback loop) and a replay mode that works without the backend; see [`frontend/README.md`](../frontend/README.md) for its views.
 
 ## 3. Experiment designs
 
@@ -170,7 +170,6 @@ The harness implements and emits:
 - **Recall@k and MAP:** evaluated over tickets with a known `duplicate_of` target. The retrieval ranking uses visible title/body tokens and component metadata; it does not insert the target ID into the ranking. Duplicate examples are near-copy synthetic reports, so high retrieval scores should not be generalized to real ticket data.
 - **Macro-F1:** average per-class F1 for Low, Medium, High, and Critical on the held-out severity rows.
 - **NAPFD:** calculated from fault ranks in each arm's deterministic priority order.
-- **RCA Top-k:** general utility function, also used in the separate RCA experiment.
 - **DORA-style metrics:** deployment frequency per day in the simulated 30-day window, mean simulated lead time, mean recovery time for simulated failed deployments, change failure rate, and synthetic rework rate.
 - **Security injections:** 20 synthetic cases—five each for secret-in-diff, deploy-during-freeze, PII-on-egress, and Critical severity without approval. The target is zero cases passed to the next stage.
 

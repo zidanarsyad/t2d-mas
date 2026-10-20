@@ -1,51 +1,66 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import {
+  Activity,
   Bell,
   Bot,
   CircleHelp,
-  FileClock,
+  CirclePlay,
   FlaskConical,
-  Gauge,
   History,
+  Kanban,
   LayoutDashboard,
   Menu,
-  MessageSquareText,
   Moon,
-  Plus,
+  Radio,
+  Route,
   Search,
   ShieldCheck,
   Sun,
   Workflow,
-  X,
 } from "lucide-react";
 import { useWorkspace } from "./hooks/useWorkspace";
-import { statusLabel } from "./workflow";
+import Dialog from "./components/Dialog";
+import { StatusBadge } from "./components/Primitives";
+import { glossary } from "./data/glossary.js";
+
 const OverviewPage = lazy(() => import("./pages/OverviewPage.jsx"));
-const PipelinePage = lazy(() => import("./pages/PipelinePage.jsx"));
-const AgentsPage = lazy(() => import("./pages/AgentsPage.jsx"));
+const RunTicketPage = lazy(() => import("./pages/RunTicketPage.jsx"));
+const TicketsPage = lazy(() => import("./pages/TicketsPage.jsx"));
+const ReviewsPage = lazy(() => import("./pages/ReviewsPage.jsx"));
 const TracePage = lazy(() => import("./pages/TracePage.jsx"));
-const ApprovalsPage = lazy(() => import("./pages/ApprovalsPage.jsx"));
-const PerformancePage = lazy(() => import("./pages/PerformancePage.jsx"));
-const TicketHistoryPage = lazy(() => import("./pages/TicketHistoryPage.jsx"));
+const AgentsPage = lazy(() => import("./pages/AgentsPage.jsx"));
+const MonitoringPage = lazy(() => import("./pages/MonitoringPage.jsx"));
 const ExperimentsPage = lazy(() => import("./pages/ExperimentsPage.jsx"));
-const TicketTestPage = lazy(() => import("./pages/TicketTestPage.jsx"));
-const CommunicationsPage = lazy(() => import("./pages/CommunicationsPage.jsx"));
-const nav = [
-  { id: "overview", label: "Project overview", icon: Workflow },
-  { id: "pipeline", label: "Ticket overview", icon: LayoutDashboard },
-  {
-    id: "communications",
-    label: "Agent conversations",
-    icon: MessageSquareText,
-  },
-  { id: "test", label: "Run a ticket", icon: Plus },
-  { id: "approvals", label: "Human reviews", icon: ShieldCheck },
-  { id: "trace", label: "Decision trail", icon: FileClock },
-  { id: "history", label: "Ticket history", icon: History },
-  { id: "agents", label: "Meet the agents", icon: Bot },
-  { id: "performance", label: "Performance example", icon: Gauge },
-  { id: "experiments", label: "Experiment results", icon: FlaskConical },
+
+const NAV = [
+  { id: "overview", label: "Overview", icon: LayoutDashboard, page: OverviewPage },
+  { id: "run", label: "Run a ticket", icon: CirclePlay, page: RunTicketPage },
+  { id: "tickets", label: "Tickets", icon: Kanban, page: TicketsPage },
+  { id: "reviews", label: "Human reviews", icon: ShieldCheck, page: ReviewsPage },
+  { id: "trace", label: "Decision trace", icon: Route, page: TracePage },
+  { id: "agents", label: "Agents", icon: Bot, page: AgentsPage },
+  { id: "monitoring", label: "Monitoring", icon: Activity, page: MonitoringPage },
+  { id: "experiments", label: "Experiment results", icon: FlaskConical, page: ExperimentsPage },
 ];
+
+// Old bookmarks and the demo guide still use these hashes.
+export const legacyRoutes = {
+  test: "run",
+  pipeline: "tickets",
+  history: "tickets/saved",
+  approvals: "reviews",
+  communications: "trace",
+  performance: "monitoring",
+};
+
+function readRoute() {
+  const raw = window.location.hash.slice(1);
+  // An old hash is rewritten in place, so the address bar shows the new name.
+  if (legacyRoutes[raw]) window.history.replaceState(null, "", `#${legacyRoutes[raw]}`);
+  const [page, sub = ""] = (legacyRoutes[raw] || raw).split("/");
+  return NAV.some((item) => item.id === page) ? { page, sub } : { page: "overview", sub: "" };
+}
+
 const stored = (key, fallback) => {
   try {
     return localStorage.getItem(key) || fallback;
@@ -53,381 +68,260 @@ const stored = (key, fallback) => {
     return fallback;
   }
 };
-function route() {
-  const id = window.location.hash.slice(1);
-  return nav.some((item) => item.id === id) ? id : "overview";
+const store = (key, value) => {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* Private windows may block storage; the setting then lasts for this visit only. */
+  }
+};
+const systemTheme = () => (window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+
+function healthText(health) {
+  if (!health) return "The backend is not reachable. Pages show recorded and illustrative data, and say so.";
+  const parts = [`Mode: ${health.mode || "unknown"}`];
+  if (health.storage?.kind) parts.push(`storage: ${health.storage.kind}`);
+  if (health.bus?.kind) parts.push(`bus: ${health.bus.kind}`);
+  if (health.nodes?.kind) parts.push(`nodes: ${health.nodes.kind}`);
+  parts.push(`triage model: ${health.triage_llm?.enabled ? "free OpenRouter model" : "local rules"}`);
+  return parts.join(" · ");
 }
-function Dialog({ children, title, onClose }) {
-  const ref = useRef(null);
-  useEffect(() => {
-    const element = ref.current;
-    element.showModal();
-    return () => element.close();
-  }, []);
-  return (
-    <dialog
-      ref={ref}
-      className="workspace-dialog"
-      aria-label={title}
-      onCancel={onClose}
-      onClick={(event) => event.target === ref.current && onClose()}
-    >
-      <div className="dialog-heading">
-        <h2>{title}</h2>
-        <button
-          className="icon-btn"
-          onClick={onClose}
-          aria-label="Close dialog"
-        >
-          <X size={20} />
-        </button>
-      </div>
-      {children}
-    </dialog>
-  );
-}
+
 export default function App() {
   const workspace = useWorkspace();
-  const [page, setPage] = useState(route),
-    [ticketId, setTicketId] = useState(() => stored("t2d-ticket", ""));
-  const [theme, setTheme] = useState(() =>
-      stored("t2d-theme", "light") === "dark" ? "dark" : "light",
-    ),
-    [fontSize, setFontSize] = useState(() =>
-      stored("t2d-font-size", "standard"),
-    );
-  const [search, setSearch] = useState(false),
-    [help, setHelp] = useState(false),
-    [menu, setMenu] = useState(false),
-    [query, setQuery] = useState("");
-  const record =
-    workspace.records.find((item) => item.ticket_id === ticketId) || null;
-  const pending = workspace.records.filter(
-    (item) => item.status === "waiting_for_review",
-  ).length;
-  useEffect(() => {
-    window.scrollTo({ top: 0, behavior: "auto" });
-  }, [page]);
+  const [route, setRoute] = useState(readRoute);
+  const [ticketId, setTicketId] = useState(() => stored("t2d-ticket", ""));
+  const [theme, setTheme] = useState(() => stored("t2d-theme", systemTheme()));
+  const [fontSize, setFontSize] = useState(() => stored("t2d-font-size", "standard"));
+  const [dialog, setDialog] = useState(null); // "search" | "help" | null
+  const [menu, setMenu] = useState(false);
+  const [query, setQuery] = useState("");
+
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    try {
-      localStorage.setItem("t2d-theme", theme);
-    } catch {}
+    store("t2d-theme", theme);
   }, [theme]);
   useEffect(() => {
     document.documentElement.dataset.fontSize = fontSize;
-    try {
-      localStorage.setItem("t2d-font-size", fontSize);
-    } catch {}
+    store("t2d-font-size", fontSize);
   }, [fontSize]);
   useEffect(() => {
-    const change = () => {
+    const onHash = () => {
       if (window.location.hash === "#main-content") return;
-      setPage(route());
+      setRoute(readRoute());
       setMenu(false);
     };
-    window.addEventListener("hashchange", change);
-    return () => window.removeEventListener("hashchange", change);
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
   }, []);
   useEffect(() => {
-    const key = (event) => {
+    window.scrollTo({ top: 0 });
+  }, [route.page]);
+  useEffect(() => {
+    const onKey = (event) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        setSearch((value) => !value);
+        setDialog((value) => (value === "search" ? null : "search"));
       }
       if (event.key === "Escape") setMenu(false);
     };
-    window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
+
   const selectTicket = (id) => {
-    setTicketId(id);
-    try {
-      localStorage.setItem("t2d-ticket", id);
-    } catch {}
+    setTicketId(id || "");
+    store("t2d-ticket", id || "");
   };
-  const go = (id, nextTicket) => {
+  /** Go to a view; `nextTicket` (optional) selects a ticket first. */
+  const navigate = (id, nextTicket) => {
     if (nextTicket !== undefined) selectTicket(nextTicket);
-    setPage(id);
     window.location.hash = id;
-    setSearch(false);
+    setRoute(readRoute());
+    setDialog(null);
     setMenu(false);
   };
-  const matches = workspace.records.filter((item) =>
-    `${item.ticket_id} ${item.title} ${item.severity}`
-      .toLowerCase()
-      .includes(query.toLowerCase()),
-  );
-  const common = {
-    records: workspace.records,
-    record,
-    ticketId,
-    onSelectTicket: selectTicket,
-    onNavigate: go,
-    messages: workspace.messages,
-    connected: workspace.connected,
-  };
+
+  const current = NAV.find((item) => item.id === route.page) || NAV[0];
+  const Page = current.page;
+  const live = workspace.mode === "live";
+  const matches = workspace.records.filter((item) => `${item.ticket_id} ${item.title} ${item.severity}`.toLowerCase().includes(query.toLowerCase()));
+  const groups = [...new Set(glossary.map((entry) => entry.group))];
+
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main-content">
         Skip to content
       </a>
-      {menu && (
-        <button
-          className="nav-scrim"
-          aria-label="Close navigation"
-          onClick={() => setMenu(false)}
-        />
-      )}
-      <aside className={`sidebar ${menu ? "menu-open" : ""}`}>
-        <div className="sidebar-top">
-          <div className="brand">
-            <span>
-              <Workflow size={22} />
-            </span>
-            <b>
-              T2D<i>·</i>MAS<small>From issue to improvement</small>
-            </b>
-          </div>
-          <small className="nav-caption">DELIVERY WORKSPACE</small>
+      {menu && <button type="button" className="nav-scrim" aria-label="Close navigation" onClick={() => setMenu(false)} />}
+      <aside className={`sidebar ${menu ? "is-open" : ""}`}>
+        <div className="brand">
+          <span className="brand-mark" aria-hidden="true">
+            <Workflow size={20} />
+          </span>
+          <span>
+            <b>T2D·MAS</b>
+            <small>From feedback to release</small>
+          </span>
         </div>
-        <nav aria-label="Main navigation" className="navigation">
-          {nav.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              title={label}
-              onClick={() => go(id)}
-              className={`nav-link ${page === id ? "active" : ""}`}
-              aria-label={label}
-              aria-current={page === id ? "page" : undefined}
-            >
-              <Icon size={19} />
+        <nav aria-label="Main navigation" className="nav">
+          {NAV.map(({ id, label, icon: Icon }) => (
+            <button key={id} type="button" onClick={() => navigate(id)} className={`nav-link ${route.page === id ? "is-active" : ""}`} aria-current={route.page === id ? "page" : undefined}>
+              <Icon size={18} aria-hidden="true" />
               <span>{label}</span>
-              {id === "approvals" && pending > 0 && <b>{pending}</b>}
+              {id === "reviews" && workspace.pendingCount > 0 && (
+                <b className="nav-count" aria-label={`${workspace.pendingCount} waiting`}>
+                  {workspace.pendingCount}
+                </b>
+              )}
             </button>
           ))}
         </nav>
-        <div className="sidebar-bottom">
-          <div className="guardrail-mini">
-            <ShieldCheck size={18} />
+        <div className="sidebar-foot">
+          <div className="guardrail">
+            <ShieldCheck size={17} aria-hidden="true" />
             <span>
               <b>People stay in control</b>
-              <small>Risky decisions pause for review</small>
+              <small>Merges and full releases always need a human.</small>
             </span>
           </div>
           <button
-            className="nav-link help"
+            type="button"
+            className="nav-link"
             onClick={() => {
               setMenu(false);
-              setHelp(true);
+              setDialog("help");
             }}
-            title="How this works"
           >
-            <CircleHelp size={19} />
+            <CircleHelp size={18} aria-hidden="true" />
             <span>How this works</span>
           </button>
+          <p className="prototype-label">Course prototype · UGM</p>
         </div>
-        <div className="prototype-label">COURSE PROJECT · PROTOTYPE</div>
       </aside>
-      <main className="main-area">
+
+      <div className="main">
         <header className="topbar">
           <div className="crumb">
-            <button
-              className="icon-btn mobile-menu"
-              aria-label="Open navigation"
-              aria-expanded={menu}
-              onClick={() => setMenu(!menu)}
-            >
-              <Menu size={21} />
+            <button type="button" className="icon-button menu-button" aria-label="Open navigation" aria-expanded={menu} onClick={() => setMenu(!menu)}>
+              <Menu size={20} />
             </button>
-            <span>T2D-MAS</span>
-            <i>/</i>
-            <b>{nav.find((item) => item.id === page)?.label}</b>
+            <span className="crumb-root">
+              T2D-MAS <span aria-hidden="true">/</span>
+            </span>
+            <b>{current.label}</b>
           </div>
           <div className="top-actions">
-            <button
-              className="search-trigger"
-              onClick={() => setSearch(true)}
-              aria-label="Search tickets"
-            >
-              <Search size={17} />
+            <button type="button" className="search-trigger" onClick={() => setDialog("search")} aria-label="Find a ticket (Ctrl+K)">
+              <Search size={16} aria-hidden="true" />
               <span>Find a ticket</span>
               <kbd>Ctrl K</kbd>
             </button>
-            <span
-              className={`connection ${workspace.connected ? "connected" : ""}`}
-            >
-              <i />
-              {workspace.connected ? "Backend connected" : "Backend offline"}
+            <span className={`mode-badge ${live ? "is-live" : "is-replay"}`} title={healthText(workspace.health)} tabIndex={0} aria-label={`${live ? "Live" : "Replay mode"}. ${healthText(workspace.health)}`}>
+              {live ? <Radio size={14} aria-hidden="true" /> : <History size={14} aria-hidden="true" />}
+              <span className="mode-text">{live ? `Live${workspace.health?.mode === "local" ? " · local" : ""}` : "Replay mode"}</span>
             </span>
-            <button
-              className="icon-btn"
-              onClick={() => go("approvals")}
-              aria-label={`${pending} pending human reviews`}
-            >
+            <button type="button" className="icon-button" onClick={() => navigate("reviews")} aria-label={`${workspace.pendingCount} tickets waiting for a human`}>
               <Bell size={18} />
-              {pending > 0 && (
-                <span className="notification-count">{pending}</span>
-              )}
+              {workspace.pendingCount > 0 && <span className="bell-count">{workspace.pendingCount}</span>}
             </button>
-            <label className="font-size-control">
-              <span>Aa</span>
-              <select
-                aria-label="Text size"
-                value={fontSize}
-                onChange={(event) => setFontSize(event.target.value)}
-              >
+            <label className="text-size">
+              <span aria-hidden="true">Aa</span>
+              <select aria-label="Text size" value={fontSize} onChange={(event) => setFontSize(event.target.value)}>
                 <option value="standard">Standard</option>
                 <option value="large">Large</option>
                 <option value="larger">Extra large</option>
               </select>
             </label>
-            <button
-              className="theme-button"
-              onClick={() => setTheme(theme === "light" ? "dark" : "light")}
-              aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
-            >
-              {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
+            <button type="button" className="icon-button" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}>
+              {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
             </button>
           </div>
         </header>
-        <div id="main-content" className="page-content" tabIndex={-1}>
+        <main id="main-content" className="content" tabIndex={-1}>
           <Suspense
             fallback={
-              <div className="page-loading" role="status">
-                Opening workspace…
-              </div>
+              <p className="page-loading" role="status">
+                Opening…
+              </p>
             }
           >
-            {page === "communications" && <CommunicationsPage {...common} />}
-            {page === "overview" && <OverviewPage onNavigate={go} />}
-            {page === "pipeline" && (
-              <PipelinePage
-                {...common}
-                loading={workspace.loading}
-                error={workspace.error}
-                onRefresh={workspace.refresh}
-              />
-            )}
-            {page === "test" && (
-              <TicketTestPage
-                {...common}
-                onRecord={(item) => {
-                  workspace.upsert(item);
-                  selectTicket(item.ticket_id);
-                }}
-              />
-            )}
-            {page === "approvals" && (
-              <ApprovalsPage
-                {...common}
-                loading={workspace.loading}
-                error={workspace.error}
-                onRefresh={workspace.refresh}
-                onRecord={workspace.upsert}
-              />
-            )}
-            {page === "agents" && <AgentsPage records={workspace.records} />}{" "}
-            {page === "trace" && <TracePage {...common} />}
-            {page === "performance" && <PerformancePage />}
-            {page === "history" && <TicketHistoryPage {...common} />}
-            {page === "experiments" && <ExperimentsPage onNavigate={go} />}
+            <Page key={current.id} workspace={workspace} ticketId={ticketId} onSelectTicket={selectTicket} onNavigate={navigate} sub={route.sub} />
           </Suspense>
-        </div>
-        <footer className="app-footer">
-          <span>Nine specialist stages · Auditable human decisions</span>
+        </main>
+        <footer className="footer">
+          <span>Nine agent stages · six human gates · append-only audit log</span>
           <span>Times in Jakarta (WIB)</span>
         </footer>
-      </main>
-      {search && (
-        <Dialog title="Find a ticket" onClose={() => setSearch(false)}>
+      </div>
+
+      {dialog === "search" && (
+        <Dialog title="Find a ticket" onClose={() => setDialog(null)}>
           <label className="search-input">
-            <Search size={18} />
-            <input
-              autoFocus
-              placeholder="Ticket ID, title, or severity"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
+            <Search size={17} aria-hidden="true" />
+            <input autoFocus aria-label="Ticket id, title or severity" placeholder="Ticket id, title or severity" value={query} onChange={(event) => setQuery(event.target.value)} />
           </label>
           <div className="search-results">
             {matches.map((item) => (
-              <button
-                key={item.ticket_id}
-                onClick={() => go("test", item.ticket_id)}
-              >
+              <button key={item.ticket_id} type="button" className="search-result" onClick={() => navigate("run", item.ticket_id)}>
+                <b>{item.title}</b>
                 <span>
-                  <b>{item.title}</b>
-                  <small>
-                    {item.ticket_id} · {statusLabel(item.status)}
-                  </small>
+                  {item.ticket_id} <StatusBadge status={item.status} />
                 </span>
               </button>
             ))}
             {!matches.length && (
-              <p>
-                {workspace.loading
-                  ? "Loading tickets…"
-                  : workspace.error
-                    ? "Tickets are unavailable while the backend is offline."
-                    : "No matching tickets. Start a new ticket from Run a ticket."}
-              </p>
+              <p className="muted">{workspace.loading ? "Loading tickets…" : !live ? "No live tickets: the backend is not reachable." : "No matching tickets. Start one from Run a ticket."}</p>
             )}
           </div>
         </Dialog>
       )}
-      {help && (
-        <Dialog title="How T2D-MAS works" onClose={() => setHelp(false)}>
-          <div className="help-content">
+      {dialog === "help" && (
+        <Dialog title="How T2D-MAS works" onClose={() => setDialog(null)} className="dialog-wide">
+          <div className="stack help">
             <p>
-              Specialist agents pass a ticket through nine stages, from
-              receiving an issue to monitoring the proposed improvement.
+              Nine agents pass a ticket from user feedback to a monitored release. Agents act alone only when the policy allows it; six human gates catch the rest, and every step is written to an
+              append-only audit log.
             </p>
             <ol>
               <li>
-                <b>Run a ticket:</b> describe the issue, then follow one step at
-                a time or run until review.
+                <b>Overview</b> replays one flash-sale incident from start to finish.
               </li>
               <li>
-                <b>Agent conversations:</b> see who shares information, how
-                workers bid, and why a worker is selected.
+                <b>Run a ticket</b> starts a real run from the feedback inbox and animates it live.
               </li>
               <li>
-                <b>Human reviews:</b> accept a result, request changes, or stop
-                the run. Every decision needs a note.
+                <b>Tickets</b> shows where every ticket is; <b>Human reviews</b> lists what waits for you.
               </li>
               <li>
-                <b>Decision trail & history:</b> inspect the evidence, results,
-                and recorded decisions.
+                <b>Decision trace</b> explains why each decision was made, step by step.
+              </li>
+              <li>
+                <b>Agents</b>, <b>Monitoring</b> and <b>Experiment results</b> explain the roles, the release health loop and the A0–A3 comparison.
               </li>
             </ol>
-            <p>
-              <b>Prototype scope:</b> investigation uses local rules; changes
-              and tests are proposals; releases are simulated. Separate ML,
-              graph, and reinforcement learning experiments appear in Experiment
-              results.
+            <p className="muted">
+              <b>Replay mode:</b> without the backend, pages use recorded or illustrative data and label it. Animations follow your system&apos;s reduced-motion setting. Ctrl+K finds a ticket.
             </p>
-            <p>
-              Mobile agents take computation to data and return summaries.
-              Static agents work from a fixed location. Meet the agents explains
-              each role.
-            </p>
-            <small>
-              Use Ctrl+K to search. Text size and theme controls adjust
-              readability.
-            </small>
-            <label className="help-text-size">
-              Text size
-              <select
-                aria-label="Help text size"
-                value={fontSize}
-                onChange={(event) => setFontSize(event.target.value)}
-              >
-                <option value="standard">Standard</option>
-                <option value="large">Large</option>
-                <option value="larger">Extra large</option>
-              </select>
-            </label>
+            <h3>Glossary</h3>
+            {groups.map((group) => (
+              <section key={group} className="glossary-group">
+                <h4>{group}</h4>
+                <dl className="glossary">
+                  {glossary
+                    .filter((entry) => entry.group === group)
+                    .map((entry) => (
+                      <div key={entry.id}>
+                        <dt>{entry.term}</dt>
+                        <dd>
+                          {entry.short}
+                          {entry.example && <span className="muted"> Example: {entry.example}</span>}
+                        </dd>
+                      </div>
+                    ))}
+                </dl>
+              </section>
+            ))}
           </div>
         </Dialog>
       )}

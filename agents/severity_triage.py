@@ -8,27 +8,49 @@ from typing import Any
 
 import httpx
 
+from agents.text import normalize_for_matching
+
 
 _CUES = {
+    # English and Indonesian impact phrases. Matching runs on normalized text, so slang
+    # such as "gak bisa" or "kepotong" is already rewritten to "tidak bisa" / "terpotong".
     "Critical": (
         "critical data loss", "data loss", "data corruption", "data breach",
         "security breach", "exposed customer data", "unauthorized access",
         "ransomware", "complete outage", "global outage", "all users cannot",
-        "entire service down",
+        "entire service down", "charged twice", "double charged", "charged but",
+        "deducted without", "another customer's", "someone else's", "privacy breach", "data leak",
+        # Indonesian: money taken without an order, leaked data, everyone affected.
+        "terpotong tapi", "terpotong dua kali", "uang hilang", "saldo hilang", "data bocor",
+        "kebocoran data", "akun dibobol", "akun diretas", "semua pengguna tidak bisa",
     ),
     "High": (
         "service outage", "production outage", "production down", "site down",
-        "service unavailable", "payment failure", "checkout fails", "cannot checkout",
+        "service unavailable", "payment failure", "payment failed", "checkout fails", "cannot checkout",
         "cannot complete checkout", "checkout outage", "outage",
         "many users", "service crashes", "crash loop", "all users affected",
+        "crash", "crashed", "crashes", "keeps crashing", "can't log in", "cannot log in",
+        "not receiving the otp", "can't pay", "spins forever",
+        # Indonesian: cannot pay or log in, the app closes itself, many customers affected.
+        "tidak bisa bayar", "gagal bayar", "pembayaran gagal", "tidak bisa checkout", "gagal checkout",
+        "tidak bisa login", "login gagal", "gagal login", "otp tidak masuk", "tidak bisa dibuka",
+        "force close", "menutup sendiri", "keluar sendiri", "selalu gagal", "banyak pelanggan",
+        "banyak pengguna",
     ),
     "Medium": (
         "intermittent", "regression", "times out", "timeout", "is slow", "incorrect",
-        "not working", "does not work", "doesn't work", "fails", "error",
+        "not working", "does not work", "doesn't work", "fails", "error", "slow", "takes more than",
+        "drains", "instead of", "never arrives",
+        # Indonesian: slow, sometimes failing, not updating, not arriving.
+        "lambat", "lama banget", "loading lama", "kadang", "tidak berfungsi", "tidak ada respon",
+        "tidak update", "belum masuk", "menunggu terus", "tidak berlaku", "tidak bisa dipakai",
+        "akun terkunci", "hilang sendiri", "tidak pernah sampai", "beda sama", "terkirim",
     ),
     "Low": (
         "typo", "cosmetic", "spacing", "alignment", "color", "label", "minor",
-        "formatting", "icon", "slightly off",
+        "formatting", "icon", "slightly off", "would be nice", "feature request", "suggestion",
+        # Indonesian: typos, looks, requests.
+        "salah ketik", "harusnya", "dark mode", "warna", "tampilan", "saran", "request",
     ),
 }
 _PRIORITY = ("Critical", "High", "Medium", "Low")
@@ -125,7 +147,7 @@ def classify_ticket(text: str) -> dict[str, str | float | list[str]]:
     High and Critical predictions remain below/over the autonomy risk threshold so
     that those submissions stop for a human decision.
     """
-    normalized = re.sub(r"\s+", " ", text.lower()).strip()
+    normalized = normalize_for_matching(text)
     matched = {
         severity: [phrase for phrase in phrases
                    if re.search(rf"(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9])", normalized)]

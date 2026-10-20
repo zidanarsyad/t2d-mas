@@ -1,23 +1,8 @@
 """Reward and reporting metrics shared by the environments and evaluators."""
 from __future__ import annotations
 
-from collections.abc import Iterable
-
-
-def napfd(detected_fault_ranks: Iterable[int], num_tests: int,
-          total_faults: int) -> float:
-    """Budget-aware NAPFD; ranks are 1-based positions in the full priority order."""
-    if num_tests < 1:
-        raise ValueError("num_tests must be positive")
-    if total_faults <= 0:
-        return 1.0
-    ranks = list(detected_fault_ranks)
-    if any(rank < 1 or rank > num_tests for rank in ranks):
-        raise ValueError("fault ranks must be between 1 and num_tests")
-    detected_fraction = min(len(ranks), total_faults) / total_faults
-    score = detected_fraction - sum(ranks) / (num_tests * total_faults)
-    score += detected_fraction / (2 * num_tests)
-    return float(max(0.0, min(1.0, score)))
+# NAPFD is defined once, in eval/metrics.py, and shared with the CI environment.
+from eval.metrics import napfd  # noqa: F401  (re-exported for envs.test_prioritization)
 
 
 def prioritization_reward(napfd_value: float, total_execution_seconds: float,

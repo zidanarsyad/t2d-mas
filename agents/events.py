@@ -34,6 +34,3 @@ class EventHub:
                     yield None
         finally:
             self._subscribers.discard(queue)
-
-
-event_hub = EventHub()
