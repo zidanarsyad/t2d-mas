@@ -94,7 +94,9 @@ services:
   postgres:
     # Plain PostgreSQL: vector search lives in the offline triage/ module (FAISS).
     # After a schema change, recreate the volume once: docker compose down -v
-    image: postgres:16
+    # Pinned to one Debian release: a new glibc changes the collation version and makes
+    # PostgreSQL warn about databases created under the old one.
+    image: postgres:16-trixie
     environment:
       POSTGRES_DB: t2d
       POSTGRES_USER: t2d
