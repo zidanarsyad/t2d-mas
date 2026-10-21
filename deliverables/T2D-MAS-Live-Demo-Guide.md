@@ -12,6 +12,8 @@ There are two ways to use it:
 - **For a session on mobile agents**, use the 10-minute *Mobile-agent demo* below. It centres on Scout-Log and ends with the questions to expect.
 - **For the full walk-through**, use Parts 1–8. Parts 1 and 2 are the core; the other parts can be shortened or skipped.
 
+To prepare for questions on any part of the system, see [T2D-MAS-Demo-QA.md](T2D-MAS-Demo-QA.md).
+
 Planning, implementation, QA, deployment and monitoring use seeded simulators. Every panel says
 whether its data is live, simulated or illustrative. No real repository, CI, cluster or telemetry
 is connected.
@@ -92,6 +94,9 @@ investigation.
 - All 20 injected policy violations were blocked, including personal data leaving a node.
 
 ### Questions to expect
+
+These are the mobile-agent questions. [T2D-MAS-Demo-QA.md](T2D-MAS-Demo-QA.md) covers the whole
+system, with the numbers to know.
 
 **Is it really a mobile agent, or just remote execution?**
 Scout-Log carries its own code and state to the data and decides per node whether moving pays off.

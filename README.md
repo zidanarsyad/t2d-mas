@@ -100,7 +100,7 @@ Open http://localhost:5173. The badge at the top right says **Live · local** wh
 
 **Docker.** To run the full stack (orchestrator, six node containers, Redis and PostgreSQL), use `docker compose up --build`. After a database schema change, run `docker compose down -v` once.
 
-**Live demo.** For a 5-minute presentation path, see the [live demo guide](deliverables/T2D-MAS-Live-Demo-Guide.md).
+**Live demo.** For a 5-minute presentation path, see the [live demo guide](deliverables/T2D-MAS-Live-Demo-Guide.md). For the questions to prepare for, with answers, see the [demo Q&A](deliverables/T2D-MAS-Demo-QA.md).
 
 ## Where things are
 
@@ -114,7 +114,7 @@ Open http://localhost:5173. The badge at the top right says **Live · local** wh
 | `envs/` | Offline reinforcement learning for test order and canary releases ([README](envs/README.md)) |
 | `eval/` | The A0–A3 evaluation behind the report's numbers ([README](eval/README.md)) |
 | `docs/` | The original idea, the final report, [the audit](docs/AUDIT.md), [report revisions](docs/REPORT_REVISIONS.md), process notes |
-| `deliverables/` | Presentation deck and live demo guide |
+| `deliverables/` | Presentation deck, live demo guide and demo Q&A |
 
 The live agents reuse three small pieces of the offline modules:
 - the autonomy gate in `triage/gate.py`;
