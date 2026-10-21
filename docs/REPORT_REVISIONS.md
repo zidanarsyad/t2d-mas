@@ -17,11 +17,17 @@ again, and replace the file in `docs/`.
 
 The reasons behind each change are in [AUDIT.md](AUDIT.md).
 
-**Status (20 October 2026):** every edit below was applied as a tracked change (author "Claude") and
-uploaded as a new version of the Drive file, so its link stays the same. The edits were built on the
-Drive file's revision of 20 October, 10:33 UTC, including the cover-page change made that day.
-Part 3's figure is marked with a comment on the Gambar 3 caption. Still to do: review and accept the
-tracked changes in the Drive file, export the PDF again, and replace the file in `docs/`.
+**Status (21 October 2026):** every edit in Parts 1 and 2 is now normal text in the Drive file. They
+were uploaded on 20 October as tracked changes (author "Claude"), built on the Drive revision of
+20 October, 10:33 UTC, which includes that day's cover-page change. The Drive version of 20 October,
+12:24 UTC has no tracked changes or comments left, so the comment that marked Gambar 3 is gone too.
+On 21 October the page numbers in Daftar Isi, Daftar Tabel, and Daftar Gambar were corrected to
+match Google Docs' pagination: 78 numbers, digits only. Daftar Tabel's entry for Tabel 32 now uses
+its caption title, "Simulator dan sistem nyata yang ditiru". The result is Drive version 84 (03:51
+UTC). `docs/Laporan_Proyek1_T2D-MAS_Final.pdf` was exported from that version (80 pages, through
+a temporary Google Docs copy that was moved to trash), and every list entry matches the page it
+points to. The three lists are static text, so check their page numbers again after any edit that
+moves pages. Still to do: redraw Gambar 3 (Part 3); the report's images are unchanged.
 
 ## Part 1: numbers already patched in the PDF
 
